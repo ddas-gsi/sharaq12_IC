@@ -401,7 +401,7 @@ void analyzer_spline(int RUN_Nbr_int)
 
   // For My analysis.
   double IC_Brho_array[10];            // IC_Brho array for branch fillup
-  double beta_staraq_array[10];        // for beta_sharaq branch fillup
+  double beta_sharaq_array[10];        // for beta_sharaq branch fillup
   double beta_sharaq_f_oedo_array[10]; // for beta_sharaq_f_oedo branch fillup. Beta SHARAQ from OEDO beam Energy
 
   double AQ[10];   // A/Q at IC.
@@ -724,7 +724,7 @@ void analyzer_spline(int RUN_Nbr_int)
     tree_new->Branch(IC_Brho_name.c_str(), &IC_Brho_array[k], 320000);
 
     string beta_sharaq_name = "beta_sharaq_" + to_string(k);
-    tree_new->Branch(beta_sharaq_name.c_str(), &beta_staraq_array[k], 320000);
+    tree_new->Branch(beta_sharaq_name.c_str(), &beta_sharaq_array[k], 320000);
 
     string beta_sharaq_f_oedo_name = "beta_sharaq_f_oedo_" + to_string(k); // beta SHARAQ from OEDO beam Energy
     tree_new->Branch(beta_sharaq_f_oedo_name.c_str(), &beta_sharaq_f_oedo_array[k], 320000);
@@ -939,7 +939,8 @@ void analyzer_spline(int RUN_Nbr_int)
       double gamma_PID = sqrt(1 / (1 - pow(beta_PID, 2)));
       double E_Beam_PID = M_50Ca * (gamma_PID - 1);
 
-      double beta_SHARAQ = 14871.68 / (Beam_T[j] + 97.53 - 85 + 2 - 20 - 120 + 150 - 11 + 5.7) / 0.000000001 / 299792458000;
+      // double beta_SHARAQ = 14871.68 / (Beam_T[j] + 97.53 - 85 + 2 - 20 - 120 + 150 - 11 + 5.7) / 0.000000001 / 299792458000;    // Previous calculation.
+      double beta_SHARAQ = 14871.68 / (Beam_T[j] + 97.53 - 85 + 2 - 20 - 120 + 150 - 11 + 5.7 + 8.5 + 0) / 0.000000001 / 299792458000; // Carlos Calc 17.07.2025
       double gamma_SHARAQ = sqrt(1 / (1 - pow(beta_SHARAQ, 2)));
       double E_Beam_SHARAQ = M_50Ca * (gamma_SHARAQ - 1);
 
@@ -958,7 +959,8 @@ void analyzer_spline(int RUN_Nbr_int)
       double beta_OEDO_C = sqrt(1 - 1 / pow(gamma_OEDO_C, 2));
       double E_Beam_OEDO_C = M_50Ca * (gamma_OEDO_C - 1);
 
-      double beta_OEDO = 9489.2 / (S1PID_T[j] - 579.06 + 110 - 2 + 30 + 7) / 0.000000001 / 299792458000;
+      // double beta_OEDO = 9489.2 / (S1PID_T[j] - 579.06 + 110 - 2 + 30 + 7) / 0.000000001 / 299792458000;        // Previous calculation.
+      double beta_OEDO = 8178.66 / (S1PID_T[j] - 579.06 + 110 - 2 + 30 + 7 - 31 + 8.3) / 0.000000001 / 299792458000; // Carlos Calc 17.07.2025
       double gamma_OEDO = sqrt(1 / (1 - pow(beta_OEDO, 2)));
       double E_Beam_OEDO = M_50Ca * (gamma_OEDO - 1);
 
@@ -982,7 +984,7 @@ void analyzer_spline(int RUN_Nbr_int)
 
       // For My Analysis.
       IC_Brho_array[j] = -1000000;
-      beta_staraq_array[j] = -1000000;
+      beta_sharaq_array[j] = -1000000;
       beta_sharaq_f_oedo_array[j] = -1000000;
 
       AQ[j] = -1000000;
@@ -1047,8 +1049,8 @@ void analyzer_spline(int RUN_Nbr_int)
 
       // For My Analysis.
       IC_Brho_array[j] = IC_Brho;
-      beta_staraq_array[j] = beta_OEDO;          // beta SHARAQ from FE12-S1 TOF
-      beta_sharaq_f_oedo_array[j] = beta_OEDO_C; // beta SHARAQ from OEDO beam Energy
+      beta_sharaq_array[j] = beta_OEDO;          // beta SHARAQ from FE12-S1 TOF
+      beta_sharaq_f_oedo_array[j] = beta_OEDO_C; // beta SHARAQ extrapolated from OEDO beam Energy
 
       // beta = sqrt(2*(E_Beam_S1)*50/M_50Ca); //Assumption of no energy loss.
 
@@ -1056,6 +1058,22 @@ void analyzer_spline(int RUN_Nbr_int)
       // double gamma_1 = sqrt(1/(1-pow(beta_1,2)));
       // AQ_Uno[j] = IC_Brho*0.32184/(beta_1*gamma_1);
 
+      // AQ Previous Calc --------------------------------------
+      // AQ[j] = IC_Brho * 0.32184 / (beta_OEDO_C * gamma_OEDO_C);
+
+      // AQ[j] = AQ[j] - 0.001567 * S0_X[j];
+      // AQ[j] = AQ[j] + 0.000003749 * pow(S1_A[j] * 1000, 2) - 0.00006171 * S1_A[j] * 1000;
+      // AQ[j] = AQ[j] - 0.0003949 * S0_A[j] * 1000;
+      // AQ[j] = AQ[j] - 0.001567 * S0_X[j];
+      // AQ[j] = AQ[j] + 0.001719 * S0_X[j];
+      // AQ[j] = AQ[j] - 0.00001370 * pow(S0_A[j] * 1000, 2) - 0.0001998 * S0_A[j] * 1000;
+
+      // // AQ[j] = AQ[j] + AQ_Shift[i/370000];
+
+      // AQ[j] = AQ[j] * 1.1418 - 0.3587;
+      // AQ Previous Calc --------------------------------------
+
+      // AQ Carlos Calc 17.07.2025 --------------------------------------
       AQ[j] = IC_Brho * 0.32184 / (beta_OEDO_C * gamma_OEDO_C);
 
       AQ[j] = AQ[j] - 0.001567 * S0_X[j];
@@ -1065,10 +1083,43 @@ void analyzer_spline(int RUN_Nbr_int)
       AQ[j] = AQ[j] + 0.001719 * S0_X[j];
       AQ[j] = AQ[j] - 0.00001370 * pow(S0_A[j] * 1000, 2) - 0.0001998 * S0_A[j] * 1000;
 
-      // AQ[j] = AQ[j] + AQ_Shift[i/370000];
+      // AQ[j] = AQ[j] + AQ_Shift[i/100000]; //If you need this I can send it to you as well.
 
-      AQ[j] = AQ[j] * 1.1418 - 0.3587;
+      AQ[j] = AQ[j] + 0.000001 * pow(S1_A[j] * 1000, 2);
 
+      AQ[j] = AQ[j] * 1.123 - 0.3081;
+      // AQ Carlos Calc 17.07.2025 --------------------------------------
+
+      // AQ_2 Previous Calc --------------------------------------
+      //   AQ_2[j] = IC_Brho * 0.32184 / (beta_OEDO * gamma_OEDO);
+
+      //   AQ_2[j] = AQ_2[j] - 0.000224 * S1_Y[j];
+      //   AQ_2[j] = AQ_2[j] - 0.000955 * S0_X[j];
+      //   AQ_2[j] = AQ_2[j] - 0.000180 * S1_X[j];
+      //   AQ_2[j] = AQ_2[j] + 0.000779 * S0_A[j] * 1000;
+      //   AQ_2[j] = AQ_2[j] - 0.000229 * S0_A[j] * 1000;
+      //   AQ_2[j] = AQ_2[j] + 0.00000428 * pow(S1_A[j] * 1000, 2) + 0.0000262 * S1_A[j] * 1000;
+      //   AQ_2[j] = AQ_2[j] + 0.000198 * S0_Y[j];
+      //   AQ_2[j] = AQ_2[j] + 0.000114 * S1_B[j] * 1000;
+      //   AQ_2[j] = AQ_2[j] - 0.000022609 * pow(S0_A[j] * 1000, 2) - 0.0001201 * S0_A[j] * 1000;
+      //   AQ_2[j] = AQ_2[j] - 0.0002295 * S0_A[j] * 1000;
+      //   AQ_2[j] = AQ_2[j] + 0.000009783 * pow(S0_A[j] * 1000, 2) + 0.00006245 * S0_A[j] * 1000;
+
+      //   if (S1_Y[j] > -78.5 && S1_Y[j] < 78.5)
+      //   {
+      //     AQ_2[j] = AQ_2[j] + AQ_2_S1_Y[int(2 * S1_Y[j] + 160)];
+      //   }
+
+      //   if (S1_X[j] > -139.5 && S1_X[j] < 139.5)
+      //   {
+      //     AQ_2[j] = AQ_2[j] + AQ_2_S1_X[int(2 * S1_X[j] + 280)];
+      //   }
+
+      //   AQ_2[j] = AQ_2[j] * 1.1927 - 0.4819;
+      // }
+      // AQ_2 Previous Calc --------------------------------------
+
+      // AQ_2 Carlos Calc 17.07.2025 --------------------------------------
       AQ_2[j] = IC_Brho * 0.32184 / (beta_OEDO * gamma_OEDO);
 
       AQ_2[j] = AQ_2[j] - 0.000224 * S1_Y[j];
@@ -1082,6 +1133,7 @@ void analyzer_spline(int RUN_Nbr_int)
       AQ_2[j] = AQ_2[j] - 0.000022609 * pow(S0_A[j] * 1000, 2) - 0.0001201 * S0_A[j] * 1000;
       AQ_2[j] = AQ_2[j] - 0.0002295 * S0_A[j] * 1000;
       AQ_2[j] = AQ_2[j] + 0.000009783 * pow(S0_A[j] * 1000, 2) + 0.00006245 * S0_A[j] * 1000;
+      AQ_2[j] = AQ_2[j] + 0.000150 * S1_X[j];
 
       if (S1_Y[j] > -78.5 && S1_Y[j] < 78.5)
       {
@@ -1093,924 +1145,929 @@ void analyzer_spline(int RUN_Nbr_int)
         AQ_2[j] = AQ_2[j] + AQ_2_S1_X[int(2 * S1_X[j] + 280)];
       }
 
-      AQ_2[j] = AQ_2[j] * 1.1927 - 0.4819;
+      AQ_2[j] = AQ_2[j] + 0.000001 * pow(S1_A[j] * 1000, 2) + 0.00013 * S1_A[j] * 1000;
+      AQ_2[j] = AQ_2[j] - 0.0001 * S1_B[j] * 1000;
+      AQ_2[j] = AQ_2[j] - 0.00005 * S1_X[j];
+      AQ_2[j] = AQ_2[j] - 0.0002 * S0_X[j];
+      AQ_2[j] = AQ_2[j] - 0.0001 * S0_A[j] * 1000;
+
+      AQ_2[j] = AQ_2[j] * 1.0332 - 0.081;
+      // AQ_2 Carlos Calc 17.07.2025 --------------------------------------
+      // // CsI Energy Calibration.
+      // for (int j = 0; j < 16; j++)
+      // {
+      //   CsI_E[j] = (CsI_E[j] + CsI_N[j]) * CsI_M[j];
+      // }
+
+      // // TTT Energy Analysis.
+      // TTT_Front_E = TTT_F_E[0];
+      // TTT_Back_E = TTT_B_E[0];
+      // TTT_Front_ID = TTT_F_ID[0];
+      // TTT_Back_ID = TTT_B_ID[0];
+
+      // if (std::abs(TTT_B_ID[0] - TTT_B_ID[1]) == 1 && TTT_B_E[1] > 1.)
+      // {
+      //   for (int j = 0; j < 512; j++)
+      //   {
+      //     if (TTT_B_ID[0] == j)
+      //     {
+      //       TTT_Back_E = 1.075 * ((TTT_B_E[0] + TTT_B_E[1]) * list[0][j]) - 0.247;
+      //     }
+      //   }
+      // }
+
+      // // TTT-CsI correlation.
+      // for (int k = 0; k < 16; k++)
+      // {
+      //   if (TTT_Back_ID > Back_Min[k] && TTT_Back_ID < (Back_Min[k] + 65) && TTT_Front_ID > Front_Min[k] && TTT_Front_ID < (Front_Min[k] + 65))
+      //   {
+      //     CsI_Energy = CsI_E[ID[k]];
+      //     h_TTT_CsI[ID[k]]->Fill(CsI_Energy, TTT_Front_E);
+      //     h_TTT_CsI_all->Fill(CsI_Energy, TTT_Front_E);
+      //     CsI_Time = CsI_T_RAW[Time_ID[k]];
+      //   }
+      // }
+
+      // // YY1 Energy analysis
+      // YY1_Energy = YY1_E[0];
+      // YY1_Energy_ID = YY1_ID[0];
+
+      // // YY1-Time correlation.
+      // if (YY1_Energy_ID > -1 && YY1_Energy_ID < 16)
+      // {
+      //   YY1_Time = YY1_T_RAW[0];
+      // }
+
+      // if (YY1_Energy_ID > 15 && YY1_Energy_ID < 32)
+      // {
+      //   YY1_Time = YY1_T_RAW[1];
+      // }
+
+      // if (YY1_Energy_ID > 31 && YY1_Energy_ID < 48)
+      // {
+      //   YY1_Time = YY1_T_RAW[2];
+      // }
+
+      // if (YY1_Energy_ID > 47 && YY1_Energy_ID < 64)
+      // {
+      //   YY1_Time = YY1_T_RAW[3];
+      // }
+
+      // if (YY1_Energy_ID > 63 && YY1_Energy_ID < 80)
+      // {
+      //   YY1_Time = YY1_T_RAW[5];
+      // }
+
+      // if (YY1_Energy_ID > 79 && YY1_Energy_ID < 96)
+      // {
+      //   YY1_Time = YY1_T_RAW[4];
+      // }
+
+      // Scattering angle and incident angle.
+
+      // TTT_X = -1000000;
+      // TTT_Y = -1000000;
+      // TTT_Z = -1000000;
+
+      // if (TTT_Front_ID > -1 && TTT_Back_ID > -1 && TTT_Front_E > 0)
+      // {
+      //   TTT_X = f_Coordinates(TTT_Front_ID, TTT_Back_ID)[0];
+      //   TTT_Y = f_Coordinates(TTT_Front_ID, TTT_Back_ID)[1];
+      //   TTT_Z = f_Coordinates(TTT_Front_ID, TTT_Back_ID)[2];
+
+      //   for (int j = 0; j < 7; j++)
+      //   {
+      //     TTT_Theta[j] = -1000000;
+      //     TTT_Theta_X[j] = -1000000;
+      //     TTT_Theta_Y[j] = -1000000;
+      //     TTT_Theta_XY[j] = -1000000;
+      //     TTT_Phi[j] = -1000000;
+      //     TTT_Excitation[j] = -1000000;
+      //     TTT_Excitation_X[j] = -1000000;
+      //     TTT_Excitation_Y[j] = -1000000;
+      //     TTT_Excitation_XY[j] = -1000000;
+      //     TTT_Excitation_Mean[j] = -1000000;
+
+      //     TINA2_E = -1000000;
+
+      //     if (S0_X[j] > -100000 && S0_Y[j] > -100000 && S0_A[j] > -100000 && S0_B[j] > -100000)
+      //     {
+      //       TTT_Theta[j] = f_Theta(TTT_X - S0_X[j], TTT_Y - S0_Y[j], TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1);
+      //       TTT_Phi[j] = f_Phi(TTT_X, TTT_Y);
+
+      //       // cout << "hola" << endl;
+      //       if ((CsI_Banana_Bottom[0] * pow(CsI_Energy * sin(TTT_Theta[j]), 6) + CsI_Banana_Bottom[1] * pow(CsI_Energy * sin(TTT_Theta[j]), 5) + CsI_Banana_Bottom[2] * pow(CsI_Energy * sin(TTT_Theta[j]), 4) + CsI_Banana_Bottom[3] * pow(CsI_Energy * sin(TTT_Theta[j]), 3) + CsI_Banana_Bottom[4] * pow(CsI_Energy * sin(TTT_Theta[j]), 2) + CsI_Banana_Bottom[5] * pow(CsI_Energy * sin(TTT_Theta[j]), 1) + CsI_Banana_Bottom[6] * pow(CsI_Energy * sin(TTT_Theta[j]), 0)) < TTT_Front_E && (CsI_Banana_Top[0] * pow(CsI_Energy * sin(TTT_Theta[j]), 6) + CsI_Banana_Top[1] * pow(CsI_Energy * sin(TTT_Theta[j]), 5) + CsI_Banana_Top[2] * pow(CsI_Energy * sin(TTT_Theta[j]), 4) + CsI_Banana_Top[3] * pow(CsI_Energy * sin(TTT_Theta[j]), 3) + CsI_Banana_Top[4] * pow(CsI_Energy * sin(TTT_Theta[j]), 2) + CsI_Banana_Top[5] * pow(CsI_Energy * sin(TTT_Theta[j]), 1) + CsI_Banana_Top[6] * pow(CsI_Energy * sin(TTT_Theta[j]), 0)) > TTT_Front_E && CsI_Energy > 0.2)
+      //       {
+      //         double TTT_Saver = TTT_Front_E;
+
+      //         TTT_Front_E = f_Energy(TTT_Front_E, TTT_Theta[j]);
+
+      //         h_CsI_Gate->Fill(CsI_Energy, TTT_Front_E);
+
+      //         // cout << "hola" << endl;
+      //         TTT_Theta_X[j] = f_Theta(TTT_X + S0_X[j], TTT_Y - S0_Y[j], TTT_Z, tan(-S0_A[j]), tan(S0_B[j]), 1);
+      //         TTT_Excitation_X[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //         TTT_Theta_Y[j] = f_Theta(TTT_X - S0_X[j], TTT_Y + S0_Y[j], TTT_Z, tan(S0_A[j]), tan(-S0_B[j]), 1);
+      //         TTT_Excitation_Y[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //         TTT_Theta_XY[j] = f_Theta(TTT_X + S0_X[j], TTT_Y + S0_Y[j], TTT_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1);
+      //         TTT_Excitation_XY[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //         TTT_Theta[j] = f_Theta(TTT_X - S0_X[j], TTT_Y - S0_Y[j], TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1);
+      //         TTT_Excitation[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //         TTT_Excitation_Mean[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], 15.2, sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+      //         // cout << endl;
+      //         // cout << "Event Number = " << i << endl;
+      //         // cout << "TTT_E = " << TTT_Front_E << endl;
+      //         // cout << "CsI_E = " << CsI_Energy << endl;
+
+      //         if ((FE9_X[j] < (FS_50Ca_M_AB * PID_T[j] + FS_50Ca_N_AB)) && (FE9_X[j] > (FS_50Ca_M_BC * PID_T[j] + FS_50Ca_N_BC)) && (FE9_X[j] > (FS_50Ca_M_CD * PID_T[j] + FS_50Ca_N_CD)) && (FE9_X[j] < (FS_50Ca_M_DA * PID_T[j] + FS_50Ca_N_DA)))
+      //         {
+      //           if (F3_T[j] < (-8.913 * pow(TTT_Front_E, 2) + 102.08 * pow(TTT_Front_E, 1) - 3478) && F3_T[j] > (-4.259 * pow(TTT_Front_E, 2) + 66.11 * pow(TTT_Front_E, 1) - 3543.5))
+      //           {
+      //             if (TTT_Front_E > 1.7 && TTT_Front_E < 6.5 && abs(TTT_Front_E - TTT_Back_E) < 0.25)
+      //             {
+      //               if ((pow(AQ[j] - 2.515, 2) / pow(0.05, 2) + pow(AQ_2[j] - 2.547, 2) / pow(0.03, 2) < 1.) || (pow(AQ[j] - 2.65, 2) / pow(0.03, 2) + pow(AQ_2[j] - 2.675, 2) / pow(0.02, 2) < 1.))
+      //               {
+      //                 for (int k = 0; k < 51; k++)
+      //                 {
+      //                   h_Ex_TTT[k][0]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TTT[k][1]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TTT[k][2]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TTT[k][3]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+
+      //                   h_Ex_TINA[k][0]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TINA[k][1]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TINA[k][2]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TINA[k][3]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+
+      //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                   {
+      //                     Ex_Counter[0][k] = Ex_Counter[0][k] + 1;
+      //                     Ex_TTT_Counter[0][k] = Ex_TTT_Counter[0][k] + 1;
+      //                   }
+
+      //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                   {
+      //                     Ex_Counter[1][k] = Ex_Counter[1][k] + 1;
+      //                     Ex_TTT_Counter[1][k] = Ex_TTT_Counter[1][k] + 1;
+      //                   }
+
+      //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                   {
+      //                     Ex_Counter[2][k] = Ex_Counter[2][k] + 1;
+      //                     Ex_TTT_Counter[2][k] = Ex_TTT_Counter[2][k] + 1;
+      //                   }
+
+      //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                   {
+      //                     Ex_Counter[3][k] = Ex_Counter[3][k] + 1;
+      //                     Ex_TTT_Counter[3][k] = Ex_TTT_Counter[3][k] + 1;
+      //                   }
+
+      //                   if (k == 35)
+      //                   {
+      //                     for (int l = 0; l < 31; l++)
+      //                     {
+      //                       for (int m = 0; m < 31; m++)
+      //                       {
+      //                         h_Ex_TINA_Shift[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TTT_Shift[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TINA_Shift_X[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TTT_Shift_X[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TINA_Shift_Y[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TTT_Shift_Y[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TINA_Shift_XY[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TTT_Shift_XY[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+
+      //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                         {
+      //                           Ex_Shift_Counter[l][m] = Ex_Shift_Counter[l][m] + 1;
+      //                           Ex_TTT_Shift_Counter[l][m] = Ex_TTT_Shift_Counter[l][m] + 1;
+      //                         }
+
+      //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                         {
+      //                           Ex_Shift_Counter_X[l][m] = Ex_Shift_Counter_X[l][m] + 1;
+      //                           Ex_TTT_Shift_Counter_X[l][m] = Ex_TTT_Shift_Counter_X[l][m] + 1;
+      //                         }
+
+      //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                         {
+      //                           Ex_Shift_Counter_Y[l][m] = Ex_Shift_Counter_Y[l][m] + 1;
+      //                           Ex_TTT_Shift_Counter_Y[l][m] = Ex_TTT_Shift_Counter_Y[l][m] + 1;
+      //                         }
+
+      //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                         {
+      //                           Ex_Shift_Counter_XY[l][m] = Ex_Shift_Counter_XY[l][m] + 1;
+      //                           Ex_TTT_Shift_Counter_XY[l][m] = Ex_TTT_Shift_Counter_XY[l][m] + 1;
+      //                         }
+      //                       }
+      //                     }
+      //                   }
+      //                 }
+      //               }
+      //             }
+      //           }
+      //         }
+      //         TTT_Front_E = TTT_Saver;
+      //       }
+
+      //       if (CsI_Energy < 0.2 && TTT_Front_E < 6.5)
+      //       {
+      //         TTT_Theta_X[j] = f_Theta(TTT_X + S0_X[j], TTT_Y - S0_Y[j], TTT_Z, tan(-S0_A[j]), tan(S0_B[j]), 1);
+      //         TTT_Excitation_X[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //         TTT_Theta_Y[j] = f_Theta(TTT_X - S0_X[j], TTT_Y + S0_Y[j], TTT_Z, tan(S0_A[j]), tan(-S0_B[j]), 1);
+      //         TTT_Excitation_Y[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //         TTT_Theta_XY[j] = f_Theta(TTT_X + S0_X[j], TTT_Y + S0_Y[j], TTT_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1);
+      //         TTT_Excitation_XY[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //         TTT_Theta[j] = f_Theta(TTT_X - S0_X[j], TTT_Y - S0_Y[j], TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1);
+      //         TTT_Excitation[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+      //         TTT_Excitation_Mean[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], 15.2, sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+      //         // cout << endl;
+      //         // cout << "Event Number = " << i << endl;
+      //         // cout << "TTT_E = " << TTT_Front_E << endl;
+      //         // cout << "CsI_E = " << CsI_Energy << endl;
+
+      //         if ((FE9_X[j] < (FS_50Ca_M_AB * PID_T[j] + FS_50Ca_N_AB)) && (FE9_X[j] > (FS_50Ca_M_BC * PID_T[j] + FS_50Ca_N_BC)) && (FE9_X[j] > (FS_50Ca_M_CD * PID_T[j] + FS_50Ca_N_CD)) && (FE9_X[j] < (FS_50Ca_M_DA * PID_T[j] + FS_50Ca_N_DA)))
+      //         {
+      //           if (F3_T[j] < (-8.913 * pow(TTT_Front_E, 2) + 102.08 * pow(TTT_Front_E, 1) - 3478) && F3_T[j] > (-4.259 * pow(TTT_Front_E, 2) + 66.11 * pow(TTT_Front_E, 1) - 3543.5))
+      //           {
+      //             if (TTT_Front_E > 1.7 && TTT_Front_E < 6.5 && abs(TTT_Front_E - TTT_Back_E) < 0.25)
+      //             {
+      //               if ((pow(AQ[j] - 2.515, 2) / pow(0.05, 2) + pow(AQ_2[j] - 2.547, 2) / pow(0.03, 2) < 1.) || (pow(AQ[j] - 2.65, 2) / pow(0.03, 2) + pow(AQ_2[j] - 2.675, 2) / pow(0.02, 2) < 1.))
+      //               {
+      //                 for (int k = 0; k < 51; k++)
+      //                 {
+      //                   h_Ex_TTT[k][0]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TTT[k][1]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TTT[k][2]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TTT[k][3]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+
+      //                   h_Ex_TINA[k][0]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TINA[k][1]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TINA[k][2]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                   h_Ex_TINA[k][3]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+
+      //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                   {
+      //                     Ex_Counter[0][k] = Ex_Counter[0][k] + 1;
+      //                     Ex_TTT_Counter[0][k] = Ex_TTT_Counter[0][k] + 1;
+      //                   }
+
+      //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                   {
+      //                     Ex_Counter[1][k] = Ex_Counter[1][k] + 1;
+      //                     Ex_TTT_Counter[1][k] = Ex_TTT_Counter[1][k] + 1;
+      //                   }
+
+      //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                   {
+      //                     Ex_Counter[2][k] = Ex_Counter[2][k] + 1;
+      //                     Ex_TTT_Counter[2][k] = Ex_TTT_Counter[2][k] + 1;
+      //                   }
+
+      //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                   {
+      //                     Ex_Counter[3][k] = Ex_Counter[3][k] + 1;
+      //                     Ex_TTT_Counter[3][k] = Ex_TTT_Counter[3][k] + 1;
+      //                   }
+
+      //                   if (k == 35)
+      //                   {
+      //                     for (int l = 0; l < 31; l++)
+      //                     {
+      //                       for (int m = 0; m < 31; m++)
+      //                       {
+      //                         h_Ex_TINA_Shift[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TTT_Shift[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TINA_Shift_X[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TTT_Shift_X[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TINA_Shift_Y[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TTT_Shift_Y[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TINA_Shift_XY[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                         h_Ex_TTT_Shift_XY[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+
+      //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                         {
+      //                           Ex_Shift_Counter[l][m] = Ex_Shift_Counter[l][m] + 1;
+      //                           Ex_TTT_Shift_Counter[l][m] = Ex_TTT_Shift_Counter[l][m] + 1;
+      //                         }
+
+      //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                         {
+      //                           Ex_Shift_Counter_X[l][m] = Ex_Shift_Counter_X[l][m] + 1;
+      //                           Ex_TTT_Shift_Counter_X[l][m] = Ex_TTT_Shift_Counter_X[l][m] + 1;
+      //                         }
+
+      //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                         {
+      //                           Ex_Shift_Counter_Y[l][m] = Ex_Shift_Counter_Y[l][m] + 1;
+      //                           Ex_TTT_Shift_Counter_Y[l][m] = Ex_TTT_Shift_Counter_Y[l][m] + 1;
+      //                         }
+
+      //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                         {
+      //                           Ex_Shift_Counter_XY[l][m] = Ex_Shift_Counter_XY[l][m] + 1;
+      //                           Ex_TTT_Shift_Counter_XY[l][m] = Ex_TTT_Shift_Counter_XY[l][m] + 1;
+      //                         }
+      //                       }
+      //                     }
+      //                   }
+      //                 }
+      //               }
+      //             }
+      //           }
+      //         }
+      //       }
+      //     }
+      //   }
+      // }
+
+      // YY1_X = -1000000;
+      // YY1_Y = -1000000;
+      // YY1_Z = -1000000;
+
+      // if (YY1_Energy_ID > -1)
+      // {
+      //   YY1_X = YY1_r_list[YY1_ID_list[YY1_Energy_ID % 16]] * sin(YY1_theta_list[YY1_ID_list[YY1_Energy_ID % 16]]) * cos(YY1_phi_list[YY1_Energy_ID / 16]);
+      //   YY1_Y = YY1_r_list[YY1_ID_list[YY1_Energy_ID % 16]] * sin(YY1_theta_list[YY1_ID_list[YY1_Energy_ID % 16]]) * sin(YY1_phi_list[YY1_Energy_ID / 16]);
+      //   YY1_Z = YY1_r_list[YY1_ID_list[YY1_Energy_ID % 16]] * cos(YY1_theta_list[YY1_ID_list[YY1_Energy_ID % 16]]);
+
+      //   // YY1_X = YY1_r_list[YY1_Energy_ID%16]*sin(YY1_theta_list[YY1_Energy_ID%16])*cos(YY1_phi_list[YY1_Energy_ID/16]);
+      //   // YY1_Y = YY1_r_list[YY1_Energy_ID%16]*sin(YY1_theta_list[YY1_Energy_ID%16])*sin(YY1_phi_list[YY1_Energy_ID/16]);
+      //   // YY1_Z = YY1_r_list[YY1_Energy_ID%16]*cos(YY1_theta_list[YY1_Energy_ID%16]);
+
+      //   for (int j = 0; j < 7; j++)
+      //   {
+      //     YY1_Theta[j] = -1000000;
+      //     YY1_Theta_X[j] = -1000000;
+      //     YY1_Theta_Y[j] = -1000000;
+      //     YY1_Theta_XY[j] = -1000000;
+      //     YY1_Excitation[j] = -1000000;
+      //     YY1_Excitation_X[j] = -1000000;
+      //     YY1_Excitation_Y[j] = -1000000;
+      //     YY1_Excitation_XY[j] = -1000000;
+      //     YY1_Excitation_Mean[j] = -1000000;
+
+      //     if (S0_X[j] > -100000 && S0_Y[j] > -100000 && S0_A[j] > -100000 && S0_B[j] > -100000)
+      //     {
+      //       YY1_Phi[j] = f_Phi(YY1_X, YY1_Y);
+
+      //       YY1_Theta_X[j] = f_Theta(YY1_X + S0_X[j], YY1_Y - S0_Y[j], YY1_Z, tan(-S0_A[j]), tan(S0_B[j]), 1);
+      //       YY1_Excitation_X[j] = f_Excitation_Energy(YY1_Energy, YY1_Theta_X[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //       YY1_Theta_Y[j] = f_Theta(YY1_X - S0_X[j], YY1_Y + S0_Y[j], YY1_Z, tan(S0_A[j]), tan(-S0_B[j]), 1);
+      //       YY1_Excitation_Y[j] = f_Excitation_Energy(YY1_Energy, YY1_Theta_Y[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //       YY1_Theta_XY[j] = f_Theta(YY1_X + S0_X[j], YY1_Y + S0_Y[j], YY1_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1);
+      //       YY1_Excitation_XY[j] = f_Excitation_Energy(YY1_Energy, YY1_Theta_XY[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //       YY1_Theta[j] = f_Theta(YY1_X - S0_X[j], YY1_Y - S0_Y[j], YY1_Z, tan(S0_A[j]), tan(S0_B[j]), 1);
+      //       YY1_Excitation[j] = f_Excitation_Energy(YY1_Energy, YY1_Theta[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+      //       YY1_Excitation_Mean[j] = f_Excitation_Energy(YY1_Energy, YY1_Theta[j], 15.2, sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
+
+      //       if ((FE9_X[j] < (FS_50Ca_M_AB * PID_T[j] + FS_50Ca_N_AB)) && (FE9_X[j] > (FS_50Ca_M_BC * PID_T[j] + FS_50Ca_N_BC)) && (FE9_X[j] > (FS_50Ca_M_CD * PID_T[j] + FS_50Ca_N_CD)) && (FE9_X[j] < (FS_50Ca_M_DA * PID_T[j] + FS_50Ca_N_DA)))
+      //       {
+      //         if (F3_T[j] > -2500 && F3_T[j] < -2420)
+      //         {
+      //           if (YY1_Energy > 1.7 && YY1_Energy < 4.5)
+      //           {
+      //             if ((pow(AQ[j] - 2.515, 2) / pow(0.05, 2) + pow(AQ_2[j] - 2.547, 2) / pow(0.03, 2) < 1.) || (pow(AQ[j] - 2.65, 2) / pow(0.03, 2) + pow(AQ_2[j] - 2.675, 2) / pow(0.02, 2) < 1.))
+      //             {
+      //               for (int k = 0; k < 51; k++)
+      //               {
+      //                 h_Ex_YY1[k][0]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                 h_Ex_YY1[k][1]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                 h_Ex_YY1[k][2]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                 h_Ex_YY1[k][3]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+
+      //                 h_Ex_TINA[k][0]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                 h_Ex_TINA[k][1]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                 h_Ex_TINA[k][2]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                 h_Ex_TINA[k][3]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+
+      //                 if (f_Excitation_Energy(YY1_Energy, YY1_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, YY1_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                 {
+      //                   Ex_Counter[0][k] = Ex_Counter[0][k] + 1;
+      //                   Ex_YY1_Counter[0][k] = Ex_YY1_Counter[0][k] + 1;
+      //                 }
+      //                 if (f_Excitation_Energy(YY1_Energy, YY1_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, YY1_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                 {
+      //                   Ex_Counter[1][k] = Ex_Counter[1][k] + 1;
+      //                   Ex_YY1_Counter[1][k] = Ex_YY1_Counter[1][k] + 1;
+      //                 }
+      //                 if (f_Excitation_Energy(YY1_Energy, YY1_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, YY1_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                 {
+      //                   Ex_Counter[2][k] = Ex_Counter[2][k] + 1;
+      //                   Ex_YY1_Counter[2][k] = Ex_YY1_Counter[2][k] + 1;
+      //                 }
+      //                 if (f_Excitation_Energy(YY1_Energy, YY1_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, YY1_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                 {
+      //                   Ex_Counter[3][k] = Ex_Counter[3][k] + 1;
+      //                   Ex_YY1_Counter[3][k] = Ex_YY1_Counter[3][k] + 1;
+      //                 }
+
+      //                 if (k == 35)
+      //                 {
+      //                   for (int l = 0; l < 31; l++)
+      //                   {
+      //                     for (int m = 0; m < 31; m++)
+      //                     {
+      //                       h_Ex_TINA_Shift[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                       h_Ex_YY1_Shift[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                       h_Ex_TINA_Shift_X[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                       h_Ex_YY1_Shift_X[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                       h_Ex_TINA_Shift_Y[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                       h_Ex_YY1_Shift_Y[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                       h_Ex_TINA_Shift_XY[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+      //                       h_Ex_YY1_Shift_XY[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
+
+      //                       if (f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                       {
+      //                         Ex_Shift_Counter[l][m] = Ex_Shift_Counter[l][m] + 1;
+      //                         Ex_YY1_Shift_Counter[l][m] = Ex_YY1_Shift_Counter[l][m] + 1;
+      //                       }
+
+      //                       if (f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                       {
+      //                         Ex_Shift_Counter_X[l][m] = Ex_Shift_Counter_X[l][m] + 1;
+      //                         Ex_YY1_Shift_Counter_X[l][m] = Ex_YY1_Shift_Counter_X[l][m] + 1;
+      //                       }
+
+      //                       if (f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                       {
+      //                         Ex_Shift_Counter_Y[l][m] = Ex_Shift_Counter_Y[l][m] + 1;
+      //                         Ex_YY1_Shift_Counter_Y[l][m] = Ex_YY1_Shift_Counter_Y[l][m] + 1;
+      //                       }
+
+      //                       if (f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
+      //                       {
+      //                         Ex_Shift_Counter_XY[l][m] = Ex_Shift_Counter_XY[l][m] + 1;
+      //                         Ex_YY1_Shift_Counter_XY[l][m] = Ex_YY1_Shift_Counter_XY[l][m] + 1;
+      //                       }
+      //                     }
+      //                   }
+      //                 }
+      //               }
+      //             }
+      //           }
+      //         }
+      //       }
+      //     }
+      //   }
+      // }
+      tree_new->Fill();
     }
 
-    // // CsI Energy Calibration.
-    // for (int j = 0; j < 16; j++)
-    // {
-    //   CsI_E[j] = (CsI_E[j] + CsI_N[j]) * CsI_M[j];
-    // }
+    // cout << F3_Counter << endl;
+    // cout << FE9_Counter << endl;
+    // cout << FE12_Counter << endl;
+    // cout << S1_Counter << endl;
 
-    // // TTT Energy Analysis.
-    // TTT_Front_E = TTT_F_E[0];
-    // TTT_Back_E = TTT_B_E[0];
-    // TTT_Front_ID = TTT_F_ID[0];
-    // TTT_Back_ID = TTT_B_ID[0];
+    // cout << F3_50Ca_Counter << endl;
+    // cout << FE9_50Ca_Counter << endl;
+    // cout << FE12_50Ca_Counter << endl;
+    // cout << S1_50Ca_Counter << endl;
 
-    // if (std::abs(TTT_B_ID[0] - TTT_B_ID[1]) == 1 && TTT_B_E[1] > 1.)
-    // {
-    //   for (int j = 0; j < 512; j++)
+    // cout << F3_50Ca_S0_Counter << endl;
+    // cout << FE9_50Ca_S0_Counter << endl;
+    // cout << FE12_50Ca_S0_Counter << endl;
+    // cout << S1_50Ca_S0_Counter << endl;
+
+    // for (int k = 0; k < 101; k++)
     //   {
-    //     if (TTT_B_ID[0] == j)
-    //     {
-    //       TTT_Back_E = 1.075 * ((TTT_B_E[0] + TTT_B_E[1]) * list[0][j]) - 0.247;
-    //     }
+    //     for (int l = 0; l < 101; l++)
+    // 	{
+    // 	  if (S0_Counter[k][l] > 0)
+    // 	    {
+    // 	      Transmission_Counter[k][l] = (S1_Counter[k][l]*1.)/(S0_Counter[k][l]*1.)/20.;
+    // 	      //cout << Transmission_X_Counter[k][l] << endl;
+    // 	      //cout << Transmission_Y_Counter[k][l] << endl;
+    // 	      h_S0->SetBinContent(1 + k,1 + l,S0_Counter[k][l]);
+    // 	      h_S0_S1Gate->SetBinContent(1 + k,1 + l,S1_Counter[k][l]);
+    // 	      h_Transmission->SetBinContent(1 + k,1 + l,Transmission_Counter[k][l]);
+    // 	    }
+    // 	}
+    //   }
+
+    // for (int i = 0; i < 4; i++)
+    // {
+    //   for (int j = 0; j < 51; j++)
+    //   {
+    //     h_Ex->SetBinContent(i + 1, j + 1, Ex_Counter[i][j]);
+    //     h_TTT_Ex->SetBinContent(i + 1, j + 1, Ex_TTT_Counter[i][j]);
+    //     h_YY1_Ex->SetBinContent(i + 1, j + 1, Ex_YY1_Counter[i][j]);
     //   }
     // }
 
-    // // TTT-CsI correlation.
-    // for (int k = 0; k < 16; k++)
+    // for (int i = 0; i < 31; i++)
     // {
-    //   if (TTT_Back_ID > Back_Min[k] && TTT_Back_ID < (Back_Min[k] + 65) && TTT_Front_ID > Front_Min[k] && TTT_Front_ID < (Front_Min[k] + 65))
+    //   for (int j = 0; j < 31; j++)
     //   {
-    //     CsI_Energy = CsI_E[ID[k]];
-    //     h_TTT_CsI[ID[k]]->Fill(CsI_Energy, TTT_Front_E);
-    //     h_TTT_CsI_all->Fill(CsI_Energy, TTT_Front_E);
-    //     CsI_Time = CsI_T_RAW[Time_ID[k]];
+    //     h_Ex_Shift->SetBinContent(i + 1, j + 1, Ex_Shift_Counter[i][j]);
+    //     h_TTT_Ex_Shift->SetBinContent(i + 1, j + 1, Ex_TTT_Shift_Counter[i][j]);
+    //     h_YY1_Ex_Shift->SetBinContent(i + 1, j + 1, Ex_YY1_Shift_Counter[i][j]);
+    //     h_Ex_Shift_X->SetBinContent(i + 1, j + 1, Ex_Shift_Counter_X[i][j]);
+    //     h_TTT_Ex_Shift_X->SetBinContent(i + 1, j + 1, Ex_TTT_Shift_Counter_X[i][j]);
+    //     h_YY1_Ex_Shift_X->SetBinContent(i + 1, j + 1, Ex_YY1_Shift_Counter_X[i][j]);
+    //     h_Ex_Shift_Y->SetBinContent(i + 1, j + 1, Ex_Shift_Counter_Y[i][j]);
+    //     h_TTT_Ex_Shift_Y->SetBinContent(i + 1, j + 1, Ex_TTT_Shift_Counter_Y[i][j]);
+    //     h_YY1_Ex_Shift_Y->SetBinContent(i + 1, j + 1, Ex_YY1_Shift_Counter_Y[i][j]);
+    //     h_Ex_Shift_XY->SetBinContent(i + 1, j + 1, Ex_Shift_Counter_XY[i][j]);
+    //     h_TTT_Ex_Shift_XY->SetBinContent(i + 1, j + 1, Ex_TTT_Shift_Counter_XY[i][j]);
+    //     h_YY1_Ex_Shift_XY->SetBinContent(i + 1, j + 1, Ex_YY1_Shift_Counter_XY[i][j]);
     //   }
     // }
 
-    // // YY1 Energy analysis
-    // YY1_Energy = YY1_E[0];
-    // YY1_Energy_ID = YY1_ID[0];
-
-    // // YY1-Time correlation.
-    // if (YY1_Energy_ID > -1 && YY1_Energy_ID < 16)
-    // {
-    //   YY1_Time = YY1_T_RAW[0];
-    // }
-
-    // if (YY1_Energy_ID > 15 && YY1_Energy_ID < 32)
-    // {
-    //   YY1_Time = YY1_T_RAW[1];
-    // }
-
-    // if (YY1_Energy_ID > 31 && YY1_Energy_ID < 48)
-    // {
-    //   YY1_Time = YY1_T_RAW[2];
-    // }
-
-    // if (YY1_Energy_ID > 47 && YY1_Energy_ID < 64)
-    // {
-    //   YY1_Time = YY1_T_RAW[3];
-    // }
-
-    // if (YY1_Energy_ID > 63 && YY1_Energy_ID < 80)
-    // {
-    //   YY1_Time = YY1_T_RAW[5];
-    // }
-
-    // if (YY1_Energy_ID > 79 && YY1_Energy_ID < 96)
-    // {
-    //   YY1_Time = YY1_T_RAW[4];
-    // }
-
-    // Scattering angle and incident angle.
-
-    // TTT_X = -1000000;
-    // TTT_Y = -1000000;
-    // TTT_Z = -1000000;
-
-    // if (TTT_Front_ID > -1 && TTT_Back_ID > -1 && TTT_Front_E > 0)
-    // {
-    //   TTT_X = f_Coordinates(TTT_Front_ID, TTT_Back_ID)[0];
-    //   TTT_Y = f_Coordinates(TTT_Front_ID, TTT_Back_ID)[1];
-    //   TTT_Z = f_Coordinates(TTT_Front_ID, TTT_Back_ID)[2];
-
-    //   for (int j = 0; j < 7; j++)
-    //   {
-    //     TTT_Theta[j] = -1000000;
-    //     TTT_Theta_X[j] = -1000000;
-    //     TTT_Theta_Y[j] = -1000000;
-    //     TTT_Theta_XY[j] = -1000000;
-    //     TTT_Phi[j] = -1000000;
-    //     TTT_Excitation[j] = -1000000;
-    //     TTT_Excitation_X[j] = -1000000;
-    //     TTT_Excitation_Y[j] = -1000000;
-    //     TTT_Excitation_XY[j] = -1000000;
-    //     TTT_Excitation_Mean[j] = -1000000;
-
-    //     TINA2_E = -1000000;
-
-    //     if (S0_X[j] > -100000 && S0_Y[j] > -100000 && S0_A[j] > -100000 && S0_B[j] > -100000)
-    //     {
-    //       TTT_Theta[j] = f_Theta(TTT_X - S0_X[j], TTT_Y - S0_Y[j], TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1);
-    //       TTT_Phi[j] = f_Phi(TTT_X, TTT_Y);
-
-    //       // cout << "hola" << endl;
-    //       if ((CsI_Banana_Bottom[0] * pow(CsI_Energy * sin(TTT_Theta[j]), 6) + CsI_Banana_Bottom[1] * pow(CsI_Energy * sin(TTT_Theta[j]), 5) + CsI_Banana_Bottom[2] * pow(CsI_Energy * sin(TTT_Theta[j]), 4) + CsI_Banana_Bottom[3] * pow(CsI_Energy * sin(TTT_Theta[j]), 3) + CsI_Banana_Bottom[4] * pow(CsI_Energy * sin(TTT_Theta[j]), 2) + CsI_Banana_Bottom[5] * pow(CsI_Energy * sin(TTT_Theta[j]), 1) + CsI_Banana_Bottom[6] * pow(CsI_Energy * sin(TTT_Theta[j]), 0)) < TTT_Front_E && (CsI_Banana_Top[0] * pow(CsI_Energy * sin(TTT_Theta[j]), 6) + CsI_Banana_Top[1] * pow(CsI_Energy * sin(TTT_Theta[j]), 5) + CsI_Banana_Top[2] * pow(CsI_Energy * sin(TTT_Theta[j]), 4) + CsI_Banana_Top[3] * pow(CsI_Energy * sin(TTT_Theta[j]), 3) + CsI_Banana_Top[4] * pow(CsI_Energy * sin(TTT_Theta[j]), 2) + CsI_Banana_Top[5] * pow(CsI_Energy * sin(TTT_Theta[j]), 1) + CsI_Banana_Top[6] * pow(CsI_Energy * sin(TTT_Theta[j]), 0)) > TTT_Front_E && CsI_Energy > 0.2)
-    //       {
-    //         double TTT_Saver = TTT_Front_E;
-
-    //         TTT_Front_E = f_Energy(TTT_Front_E, TTT_Theta[j]);
-
-    //         h_CsI_Gate->Fill(CsI_Energy, TTT_Front_E);
-
-    //         // cout << "hola" << endl;
-    //         TTT_Theta_X[j] = f_Theta(TTT_X + S0_X[j], TTT_Y - S0_Y[j], TTT_Z, tan(-S0_A[j]), tan(S0_B[j]), 1);
-    //         TTT_Excitation_X[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //         TTT_Theta_Y[j] = f_Theta(TTT_X - S0_X[j], TTT_Y + S0_Y[j], TTT_Z, tan(S0_A[j]), tan(-S0_B[j]), 1);
-    //         TTT_Excitation_Y[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //         TTT_Theta_XY[j] = f_Theta(TTT_X + S0_X[j], TTT_Y + S0_Y[j], TTT_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1);
-    //         TTT_Excitation_XY[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //         TTT_Theta[j] = f_Theta(TTT_X - S0_X[j], TTT_Y - S0_Y[j], TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1);
-    //         TTT_Excitation[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //         TTT_Excitation_Mean[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], 15.2, sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-    //         // cout << endl;
-    //         // cout << "Event Number = " << i << endl;
-    //         // cout << "TTT_E = " << TTT_Front_E << endl;
-    //         // cout << "CsI_E = " << CsI_Energy << endl;
-
-    //         if ((FE9_X[j] < (FS_50Ca_M_AB * PID_T[j] + FS_50Ca_N_AB)) && (FE9_X[j] > (FS_50Ca_M_BC * PID_T[j] + FS_50Ca_N_BC)) && (FE9_X[j] > (FS_50Ca_M_CD * PID_T[j] + FS_50Ca_N_CD)) && (FE9_X[j] < (FS_50Ca_M_DA * PID_T[j] + FS_50Ca_N_DA)))
-    //         {
-    //           if (F3_T[j] < (-8.913 * pow(TTT_Front_E, 2) + 102.08 * pow(TTT_Front_E, 1) - 3478) && F3_T[j] > (-4.259 * pow(TTT_Front_E, 2) + 66.11 * pow(TTT_Front_E, 1) - 3543.5))
-    //           {
-    //             if (TTT_Front_E > 1.7 && TTT_Front_E < 6.5 && abs(TTT_Front_E - TTT_Back_E) < 0.25)
-    //             {
-    //               if ((pow(AQ[j] - 2.515, 2) / pow(0.05, 2) + pow(AQ_2[j] - 2.547, 2) / pow(0.03, 2) < 1.) || (pow(AQ[j] - 2.65, 2) / pow(0.03, 2) + pow(AQ_2[j] - 2.675, 2) / pow(0.02, 2) < 1.))
-    //               {
-    //                 for (int k = 0; k < 51; k++)
-    //                 {
-    //                   h_Ex_TTT[k][0]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TTT[k][1]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TTT[k][2]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TTT[k][3]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-
-    //                   h_Ex_TINA[k][0]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TINA[k][1]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TINA[k][2]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TINA[k][3]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-
-    //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                   {
-    //                     Ex_Counter[0][k] = Ex_Counter[0][k] + 1;
-    //                     Ex_TTT_Counter[0][k] = Ex_TTT_Counter[0][k] + 1;
-    //                   }
-
-    //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                   {
-    //                     Ex_Counter[1][k] = Ex_Counter[1][k] + 1;
-    //                     Ex_TTT_Counter[1][k] = Ex_TTT_Counter[1][k] + 1;
-    //                   }
-
-    //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                   {
-    //                     Ex_Counter[2][k] = Ex_Counter[2][k] + 1;
-    //                     Ex_TTT_Counter[2][k] = Ex_TTT_Counter[2][k] + 1;
-    //                   }
-
-    //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                   {
-    //                     Ex_Counter[3][k] = Ex_Counter[3][k] + 1;
-    //                     Ex_TTT_Counter[3][k] = Ex_TTT_Counter[3][k] + 1;
-    //                   }
-
-    //                   if (k == 35)
-    //                   {
-    //                     for (int l = 0; l < 31; l++)
-    //                     {
-    //                       for (int m = 0; m < 31; m++)
-    //                       {
-    //                         h_Ex_TINA_Shift[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TTT_Shift[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TINA_Shift_X[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TTT_Shift_X[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TINA_Shift_Y[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TTT_Shift_Y[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TINA_Shift_XY[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TTT_Shift_XY[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-
-    //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                         {
-    //                           Ex_Shift_Counter[l][m] = Ex_Shift_Counter[l][m] + 1;
-    //                           Ex_TTT_Shift_Counter[l][m] = Ex_TTT_Shift_Counter[l][m] + 1;
-    //                         }
-
-    //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                         {
-    //                           Ex_Shift_Counter_X[l][m] = Ex_Shift_Counter_X[l][m] + 1;
-    //                           Ex_TTT_Shift_Counter_X[l][m] = Ex_TTT_Shift_Counter_X[l][m] + 1;
-    //                         }
-
-    //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                         {
-    //                           Ex_Shift_Counter_Y[l][m] = Ex_Shift_Counter_Y[l][m] + 1;
-    //                           Ex_TTT_Shift_Counter_Y[l][m] = Ex_TTT_Shift_Counter_Y[l][m] + 1;
-    //                         }
-
-    //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                         {
-    //                           Ex_Shift_Counter_XY[l][m] = Ex_Shift_Counter_XY[l][m] + 1;
-    //                           Ex_TTT_Shift_Counter_XY[l][m] = Ex_TTT_Shift_Counter_XY[l][m] + 1;
-    //                         }
-    //                       }
-    //                     }
-    //                   }
-    //                 }
-    //               }
-    //             }
-    //           }
-    //         }
-    //         TTT_Front_E = TTT_Saver;
-    //       }
-
-    //       if (CsI_Energy < 0.2 && TTT_Front_E < 6.5)
-    //       {
-    //         TTT_Theta_X[j] = f_Theta(TTT_X + S0_X[j], TTT_Y - S0_Y[j], TTT_Z, tan(-S0_A[j]), tan(S0_B[j]), 1);
-    //         TTT_Excitation_X[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //         TTT_Theta_Y[j] = f_Theta(TTT_X - S0_X[j], TTT_Y + S0_Y[j], TTT_Z, tan(S0_A[j]), tan(-S0_B[j]), 1);
-    //         TTT_Excitation_Y[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //         TTT_Theta_XY[j] = f_Theta(TTT_X + S0_X[j], TTT_Y + S0_Y[j], TTT_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1);
-    //         TTT_Excitation_XY[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //         TTT_Theta[j] = f_Theta(TTT_X - S0_X[j], TTT_Y - S0_Y[j], TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1);
-    //         TTT_Excitation[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-    //         TTT_Excitation_Mean[j] = f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], 15.2, sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-    //         // cout << endl;
-    //         // cout << "Event Number = " << i << endl;
-    //         // cout << "TTT_E = " << TTT_Front_E << endl;
-    //         // cout << "CsI_E = " << CsI_Energy << endl;
-
-    //         if ((FE9_X[j] < (FS_50Ca_M_AB * PID_T[j] + FS_50Ca_N_AB)) && (FE9_X[j] > (FS_50Ca_M_BC * PID_T[j] + FS_50Ca_N_BC)) && (FE9_X[j] > (FS_50Ca_M_CD * PID_T[j] + FS_50Ca_N_CD)) && (FE9_X[j] < (FS_50Ca_M_DA * PID_T[j] + FS_50Ca_N_DA)))
-    //         {
-    //           if (F3_T[j] < (-8.913 * pow(TTT_Front_E, 2) + 102.08 * pow(TTT_Front_E, 1) - 3478) && F3_T[j] > (-4.259 * pow(TTT_Front_E, 2) + 66.11 * pow(TTT_Front_E, 1) - 3543.5))
-    //           {
-    //             if (TTT_Front_E > 1.7 && TTT_Front_E < 6.5 && abs(TTT_Front_E - TTT_Back_E) < 0.25)
-    //             {
-    //               if ((pow(AQ[j] - 2.515, 2) / pow(0.05, 2) + pow(AQ_2[j] - 2.547, 2) / pow(0.03, 2) < 1.) || (pow(AQ[j] - 2.65, 2) / pow(0.03, 2) + pow(AQ_2[j] - 2.675, 2) / pow(0.02, 2) < 1.))
-    //               {
-    //                 for (int k = 0; k < 51; k++)
-    //                 {
-    //                   h_Ex_TTT[k][0]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TTT[k][1]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TTT[k][2]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TTT[k][3]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-
-    //                   h_Ex_TINA[k][0]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TINA[k][1]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TINA[k][2]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                   h_Ex_TINA[k][3]->Fill(f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-
-    //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                   {
-    //                     Ex_Counter[0][k] = Ex_Counter[0][k] + 1;
-    //                     Ex_TTT_Counter[0][k] = Ex_TTT_Counter[0][k] + 1;
-    //                   }
-
-    //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                   {
-    //                     Ex_Counter[1][k] = Ex_Counter[1][k] + 1;
-    //                     Ex_TTT_Counter[1][k] = Ex_TTT_Counter[1][k] + 1;
-    //                   }
-
-    //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                   {
-    //                     Ex_Counter[2][k] = Ex_Counter[2][k] + 1;
-    //                     Ex_TTT_Counter[2][k] = Ex_TTT_Counter[2][k] + 1;
-    //                   }
-
-    //                   if (f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, TTT_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                   {
-    //                     Ex_Counter[3][k] = Ex_Counter[3][k] + 1;
-    //                     Ex_TTT_Counter[3][k] = Ex_TTT_Counter[3][k] + 1;
-    //                   }
-
-    //                   if (k == 35)
-    //                   {
-    //                     for (int l = 0; l < 31; l++)
-    //                     {
-    //                       for (int m = 0; m < 31; m++)
-    //                       {
-    //                         h_Ex_TINA_Shift[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TTT_Shift[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TINA_Shift_X[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TTT_Shift_X[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TINA_Shift_Y[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TTT_Shift_Y[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TINA_Shift_XY[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                         h_Ex_TTT_Shift_XY[l][m]->Fill(f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-
-    //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                         {
-    //                           Ex_Shift_Counter[l][m] = Ex_Shift_Counter[l][m] + 1;
-    //                           Ex_TTT_Shift_Counter[l][m] = Ex_TTT_Shift_Counter[l][m] + 1;
-    //                         }
-
-    //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y - S0_Y[j] + (m - 15), TTT_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                         {
-    //                           Ex_Shift_Counter_X[l][m] = Ex_Shift_Counter_X[l][m] + 1;
-    //                           Ex_TTT_Shift_Counter_X[l][m] = Ex_TTT_Shift_Counter_X[l][m] + 1;
-    //                         }
-
-    //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X - S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                         {
-    //                           Ex_Shift_Counter_Y[l][m] = Ex_Shift_Counter_Y[l][m] + 1;
-    //                           Ex_TTT_Shift_Counter_Y[l][m] = Ex_TTT_Shift_Counter_Y[l][m] + 1;
-    //                         }
-
-    //                         if (f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(TTT_Front_E, f_Theta(TTT_X + S0_X[j] + (l - 15), TTT_Y + S0_Y[j] + (m - 15), TTT_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                         {
-    //                           Ex_Shift_Counter_XY[l][m] = Ex_Shift_Counter_XY[l][m] + 1;
-    //                           Ex_TTT_Shift_Counter_XY[l][m] = Ex_TTT_Shift_Counter_XY[l][m] + 1;
-    //                         }
-    //                       }
-    //                     }
-    //                   }
-    //                 }
-    //               }
-    //             }
-    //           }
-    //         }
-    //       }
-    //     }
-    //   }
-    // }
-
-    // YY1_X = -1000000;
-    // YY1_Y = -1000000;
-    // YY1_Z = -1000000;
-
-    // if (YY1_Energy_ID > -1)
-    // {
-    //   YY1_X = YY1_r_list[YY1_ID_list[YY1_Energy_ID % 16]] * sin(YY1_theta_list[YY1_ID_list[YY1_Energy_ID % 16]]) * cos(YY1_phi_list[YY1_Energy_ID / 16]);
-    //   YY1_Y = YY1_r_list[YY1_ID_list[YY1_Energy_ID % 16]] * sin(YY1_theta_list[YY1_ID_list[YY1_Energy_ID % 16]]) * sin(YY1_phi_list[YY1_Energy_ID / 16]);
-    //   YY1_Z = YY1_r_list[YY1_ID_list[YY1_Energy_ID % 16]] * cos(YY1_theta_list[YY1_ID_list[YY1_Energy_ID % 16]]);
-
-    //   // YY1_X = YY1_r_list[YY1_Energy_ID%16]*sin(YY1_theta_list[YY1_Energy_ID%16])*cos(YY1_phi_list[YY1_Energy_ID/16]);
-    //   // YY1_Y = YY1_r_list[YY1_Energy_ID%16]*sin(YY1_theta_list[YY1_Energy_ID%16])*sin(YY1_phi_list[YY1_Energy_ID/16]);
-    //   // YY1_Z = YY1_r_list[YY1_Energy_ID%16]*cos(YY1_theta_list[YY1_Energy_ID%16]);
-
-    //   for (int j = 0; j < 7; j++)
-    //   {
-    //     YY1_Theta[j] = -1000000;
-    //     YY1_Theta_X[j] = -1000000;
-    //     YY1_Theta_Y[j] = -1000000;
-    //     YY1_Theta_XY[j] = -1000000;
-    //     YY1_Excitation[j] = -1000000;
-    //     YY1_Excitation_X[j] = -1000000;
-    //     YY1_Excitation_Y[j] = -1000000;
-    //     YY1_Excitation_XY[j] = -1000000;
-    //     YY1_Excitation_Mean[j] = -1000000;
-
-    //     if (S0_X[j] > -100000 && S0_Y[j] > -100000 && S0_A[j] > -100000 && S0_B[j] > -100000)
-    //     {
-    //       YY1_Phi[j] = f_Phi(YY1_X, YY1_Y);
-
-    //       YY1_Theta_X[j] = f_Theta(YY1_X + S0_X[j], YY1_Y - S0_Y[j], YY1_Z, tan(-S0_A[j]), tan(S0_B[j]), 1);
-    //       YY1_Excitation_X[j] = f_Excitation_Energy(YY1_Energy, YY1_Theta_X[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //       YY1_Theta_Y[j] = f_Theta(YY1_X - S0_X[j], YY1_Y + S0_Y[j], YY1_Z, tan(S0_A[j]), tan(-S0_B[j]), 1);
-    //       YY1_Excitation_Y[j] = f_Excitation_Energy(YY1_Energy, YY1_Theta_Y[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //       YY1_Theta_XY[j] = f_Theta(YY1_X + S0_X[j], YY1_Y + S0_Y[j], YY1_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1);
-    //       YY1_Excitation_XY[j] = f_Excitation_Energy(YY1_Energy, YY1_Theta_XY[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //       YY1_Theta[j] = f_Theta(YY1_X - S0_X[j], YY1_Y - S0_Y[j], YY1_Z, tan(S0_A[j]), tan(S0_B[j]), 1);
-    //       YY1_Excitation[j] = f_Excitation_Energy(YY1_Energy, YY1_Theta[j], E_Beam_C[j], sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-    //       YY1_Excitation_Mean[j] = f_Excitation_Energy(YY1_Energy, YY1_Theta[j], 15.2, sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2)));
-
-    //       if ((FE9_X[j] < (FS_50Ca_M_AB * PID_T[j] + FS_50Ca_N_AB)) && (FE9_X[j] > (FS_50Ca_M_BC * PID_T[j] + FS_50Ca_N_BC)) && (FE9_X[j] > (FS_50Ca_M_CD * PID_T[j] + FS_50Ca_N_CD)) && (FE9_X[j] < (FS_50Ca_M_DA * PID_T[j] + FS_50Ca_N_DA)))
-    //       {
-    //         if (F3_T[j] > -2500 && F3_T[j] < -2420)
-    //         {
-    //           if (YY1_Energy > 1.7 && YY1_Energy < 4.5)
-    //           {
-    //             if ((pow(AQ[j] - 2.515, 2) / pow(0.05, 2) + pow(AQ_2[j] - 2.547, 2) / pow(0.03, 2) < 1.) || (pow(AQ[j] - 2.65, 2) / pow(0.03, 2) + pow(AQ_2[j] - 2.675, 2) / pow(0.02, 2) < 1.))
-    //             {
-    //               for (int k = 0; k < 51; k++)
-    //               {
-    //                 h_Ex_YY1[k][0]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                 h_Ex_YY1[k][1]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                 h_Ex_YY1[k][2]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                 h_Ex_YY1[k][3]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-
-    //                 h_Ex_TINA[k][0]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                 h_Ex_TINA[k][1]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                 h_Ex_TINA[k][2]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                 h_Ex_TINA[k][3]->Fill(f_Excitation_Energy(YY1_Energy, YY1_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-
-    //                 if (f_Excitation_Energy(YY1_Energy, YY1_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, YY1_Theta[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                 {
-    //                   Ex_Counter[0][k] = Ex_Counter[0][k] + 1;
-    //                   Ex_YY1_Counter[0][k] = Ex_YY1_Counter[0][k] + 1;
-    //                 }
-    //                 if (f_Excitation_Energy(YY1_Energy, YY1_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, YY1_Theta_X[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                 {
-    //                   Ex_Counter[1][k] = Ex_Counter[1][k] + 1;
-    //                   Ex_YY1_Counter[1][k] = Ex_YY1_Counter[1][k] + 1;
-    //                 }
-    //                 if (f_Excitation_Energy(YY1_Energy, YY1_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, YY1_Theta_Y[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                 {
-    //                   Ex_Counter[2][k] = Ex_Counter[2][k] + 1;
-    //                   Ex_YY1_Counter[2][k] = Ex_YY1_Counter[2][k] + 1;
-    //                 }
-    //                 if (f_Excitation_Energy(YY1_Energy, YY1_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, YY1_Theta_XY[j], E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                 {
-    //                   Ex_Counter[3][k] = Ex_Counter[3][k] + 1;
-    //                   Ex_YY1_Counter[3][k] = Ex_YY1_Counter[3][k] + 1;
-    //                 }
-
-    //                 if (k == 35)
-    //                 {
-    //                   for (int l = 0; l < 31; l++)
-    //                   {
-    //                     for (int m = 0; m < 31; m++)
-    //                     {
-    //                       h_Ex_TINA_Shift[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                       h_Ex_YY1_Shift[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                       h_Ex_TINA_Shift_X[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                       h_Ex_YY1_Shift_X[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                       h_Ex_TINA_Shift_Y[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                       h_Ex_YY1_Shift_Y[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                       h_Ex_TINA_Shift_XY[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-    //                       h_Ex_YY1_Shift_XY[l][m]->Fill(f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))));
-
-    //                       if (f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                       {
-    //                         Ex_Shift_Counter[l][m] = Ex_Shift_Counter[l][m] + 1;
-    //                         Ex_YY1_Shift_Counter[l][m] = Ex_YY1_Shift_Counter[l][m] + 1;
-    //                       }
-
-    //                       if (f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y - S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                       {
-    //                         Ex_Shift_Counter_X[l][m] = Ex_Shift_Counter_X[l][m] + 1;
-    //                         Ex_YY1_Shift_Counter_X[l][m] = Ex_YY1_Shift_Counter_X[l][m] + 1;
-    //                       }
-
-    //                       if (f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X - S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                       {
-    //                         Ex_Shift_Counter_Y[l][m] = Ex_Shift_Counter_Y[l][m] + 1;
-    //                         Ex_YY1_Shift_Counter_Y[l][m] = Ex_YY1_Shift_Counter_Y[l][m] + 1;
-    //                       }
-
-    //                       if (f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) > -0.5 && f_Excitation_Energy(YY1_Energy, f_Theta(YY1_X + S0_X[j] + (l - 15), YY1_Y + S0_Y[j] + (m - 15), YY1_Z, tan(-S0_A[j]), tan(-S0_B[j]), 1), E_Beam_C[j] + (0.1 * k - 3.5), sqrt(pow(S0_A[j], 2) + pow(S0_B[j], 2))) < 5.3)
-    //                       {
-    //                         Ex_Shift_Counter_XY[l][m] = Ex_Shift_Counter_XY[l][m] + 1;
-    //                         Ex_YY1_Shift_Counter_XY[l][m] = Ex_YY1_Shift_Counter_XY[l][m] + 1;
-    //                       }
-    //                     }
-    //                   }
-    //                 }
-    //               }
-    //             }
-    //           }
-    //         }
-    //       }
-    //     }
-    //   }
-    // }
-    tree_new->Fill();
+    file->Close();
+    ofile_new->cd();
+    // hlist->Write();
+    tree_new->Write("", TObject::kOverwrite);
+    ofile_new->Close();
   }
 
-  // cout << F3_Counter << endl;
-  // cout << FE9_Counter << endl;
-  // cout << FE12_Counter << endl;
-  // cout << S1_Counter << endl;
+  vector<double> f_Coordinates(int ID_Front, int ID_Back)
+  {
 
-  // cout << F3_50Ca_Counter << endl;
-  // cout << FE9_50Ca_Counter << endl;
-  // cout << FE12_50Ca_Counter << endl;
-  // cout << S1_50Ca_Counter << endl;
+    double TTT_X;
+    double TTT_Y;
+    double TTT_Z;
 
-  // cout << F3_50Ca_S0_Counter << endl;
-  // cout << FE9_50Ca_S0_Counter << endl;
-  // cout << FE12_50Ca_S0_Counter << endl;
-  // cout << S1_50Ca_S0_Counter << endl;
+    // Some constants of TINA extracted from NPTool simulations.
+    double TTT_length = 100.42;                                // Length of a TTT side.
+    double TTT_active_length = 97.22;                          // Length of the active region of a TTT side.
+    double TTT_strip_width = TTT_active_length / 128.;         // Width of each strip.
+    double TTT_target_to_strip = -14.14 - TTT_strip_width / 2; // Distance from target to center of first back strip.
 
-  // for (int k = 0; k < 101; k++)
-  //   {
-  //     for (int l = 0; l < 101; l++)
+    // Output.
+    vector<double> Position;
+
+    // From the front strip we get the X and Y coordinates of the proton.
+    if (ID_Front < 128)
+    { // If the pixel is in the first TTT.
+      TTT_Y = -55;
+      TTT_X = (TTT_active_length - TTT_strip_width) / 2 - (TTT_strip_width * (ID_Front));
+    }
+    if (ID_Front > 127 && ID_Front < 256)
+    { // If the pixel is in the second TTT.
+      TTT_X = -55;
+      TTT_Y = -(TTT_active_length - TTT_strip_width) / 2 + (TTT_strip_width * (ID_Front - 128));
+    }
+    if (ID_Front > 255 && ID_Front < 384)
+    { // If the pixel is in the third TTT.
+      TTT_Y = 55;
+      TTT_X = -(TTT_active_length - TTT_strip_width) / 2 + (TTT_strip_width * (ID_Front - 256));
+    }
+    if (ID_Front > 383)
+    { // If the pixel is in the fourth TTT.
+      TTT_X = 55;
+      TTT_Y = (TTT_active_length - TTT_strip_width) / 2 - (TTT_strip_width * (ID_Front - 384));
+    }
+    // From the back strip we get the Z coordinate.
+    if (ID_Back < 128)
+    { // If the pixel is in the first TTT.
+      TTT_Z = TTT_target_to_strip - (TTT_strip_width * ID_Back);
+    }
+    if (ID_Back > 127 && ID_Back < 256)
+    { // If the pixel is in the second TTT.
+      TTT_Z = TTT_target_to_strip - (TTT_strip_width * (ID_Back - 128));
+    }
+    if (ID_Back > 255 && ID_Back < 384)
+    { // If the pixel is in the third TTT.
+      TTT_Z = TTT_target_to_strip - (TTT_strip_width * (ID_Back - 256));
+    }
+    if (ID_Back > 383)
+    { // If the pixel is in the fourth TTT.
+      TTT_Z = TTT_target_to_strip - (TTT_strip_width * (ID_Back - 384));
+    }
+
+    Position.push_back(TTT_X);
+    Position.push_back(TTT_Y);
+    Position.push_back(TTT_Z);
+
+    return Position;
+  }
+  double f_Theta(double X, double Y, double Z, double X_0, double Y_0, double Z_0)
+  {
+    double Theta;
+    Theta = acos((X_0 * X + Y_0 * Y + Z_0 * Z) / ((sqrt(pow(X_0, 2) + pow(Y_0, 2) + pow(Z_0, 2)) * sqrt(pow(X, 2) + pow(Y, 2) + pow(Z, 2)))));
+    return Theta;
+  }
+
+  double f_Phi(double X, double Y)
+  {
+    double Phi;
+    double PI = 3.14159265358979323846;
+
+    if (X < 0)
+    {
+      Phi = (PI + atan(Y / X));
+    }
+    if (X > 0)
+    {
+      if (Y > 0)
+      {
+        Phi = (atan(Y / X));
+      }
+      if (Y < 0)
+      {
+        Phi = (2 * PI + atan(Y / X));
+      }
+    }
+    if (X == 0)
+    {
+      if (Y > 0)
+      {
+        Phi = PI / 2.;
+      }
+      if (Y < 0)
+      {
+        Phi = -3 * PI / 2.;
+      }
+    }
+    return Phi;
+  }
+
+  double f_Excitation_Energy(double Proton_Energy, double Scattering_Angle, double Beam_Energy, double Incident_Angle)
+  {
+
+    // Masses of the nuclei.
+
+    double M_49Ca = 45601.906;
+    double M_50Ca = 46535.0915;
+    double M_51Ca = 47469.8421;
+    double M_2H = 1875.61689;
+    double M_1H = 938.273993;
+
+    double Qvalue = M_50Ca + M_2H - M_51Ca - M_1H; // Q-value of the 50Ca(d,p)51Ca neutron transfer reaction.
+    // double Qvalue = M_49Ca + M_2H - M_50Ca - M_1H; //Q-value of the 49Ca(d,p)50Ca neutron transfer reaction.
+
+    // Total energies of the nuclei.
+    double E_50Ca = 0;
+    double E_51Ca = 0;
+    double E_1H = 0;
+    double E_2H = 0;
+
+    // Kinetic energies of the nuclei.
+    double T_50Ca = 0;
+    double T_51Ca = 0;
+    double T_2H = 0;
+    double T_1H = 0;
+
+    // Momenta of the nuclei.
+    double P_50Ca = 0;
+    double Px_50Ca = 0;
+    double Py_50Ca = 0;
+
+    double P_51Ca = 0;
+    double Px_51Ca = 0;
+    double Py_51Ca = 0;
+
+    double P_1H = 0;
+    double Px_1H = 0;
+    double Py_1H = 0;
+
+    double P_2H = 0;
+    double Px_2H = 0;
+    double Py_2H = 0;
+
+    double Invariant = 0;
+    double Excitation = 0;
+
+    double PI = 3.14159265358979323846;
+
+    T_50Ca = Beam_Energy * 50;
+    // T_50Ca = Beam_Energy*49;
+
+    E_50Ca = T_50Ca + M_50Ca;
+    P_50Ca = sqrt(pow(E_50Ca, 2) - pow(M_50Ca, 2));
+
+    // E_50Ca = T_50Ca + M_49Ca;
+    // P_50Ca = sqrt(pow(E_50Ca,2) - pow(M_49Ca,2));
+
+    // Px_50Ca = P_50Ca*cos(Incident_Angle);
+    // Py_50Ca = P_50Ca*sin(Incident_Angle);
+
+    Px_50Ca = P_50Ca;
+
+    // Proton.
+    T_1H = Proton_Energy;
+    E_1H = T_1H + M_1H;
+    P_1H = sqrt(pow(E_1H, 2) - pow(M_1H, 2));
+    Px_1H = P_1H * cos(Scattering_Angle);
+    Py_1H = P_1H * sin(Scattering_Angle);
+
+    // Excitation energy.
+    E_51Ca = E_50Ca + M_2H - E_1H;
+    T_51Ca = E_51Ca - M_51Ca;
+    Px_51Ca = Px_50Ca - Px_1H;
+    Py_51Ca = Py_50Ca - Py_1H;
+
+    Invariant = sqrt(pow(E_51Ca, 2) - pow(Px_51Ca, 2) - pow(Py_51Ca, 2));
+
+    Excitation = Invariant - M_51Ca;
+    // cout << T_51Ca << endl;
+    return Excitation;
+  }
+
+  double f_list(int a, int b)
+  {
+    FILE *myfile;
+    double myvariable;
+    string SRPPAC;
+    string sector;
+    double output;
+    int j;
+    int k;
+
+    string input = "/u/ddas/software/work/artemis-oedo/output/Analysis/TTT_B_param.txt";
+    myfile = fopen(input.c_str(), "r");
+    for (j = 0; j < HEIGHT; j++)
+    {
+      for (k = 0; k < WIDTH; k++)
+      {
+        fscanf(myfile, "%lf", &myvariable);
+        if (j == b && k == a)
+        {
+          output = myvariable;
+        }
+      }
+    }
+    fclose(myfile);
+    return output;
+  }
+
+  // double f_PID_Shift(int a)
+  // {
+  //   FILE *myfile;
+  //   double myvariable;
+  //   string SRPPAC;
+  //   string sector;
+  //   double output;
+  //   int j;
+  //   int k;
+  //    str ing input = "/home/jupiter/test/work/artemis-oedo/macro/Analysis/F3/PID_T_Event.txt";
+  //   myfile=fopen(input.c_str(), "r");
+  //   for(j = 0; j < 2500; j++)
+  //     {
+  //       for (k = 0 ; k < 4; k++)
   // 	{
-  // 	  if (S0_Counter[k][l] > 0)
-  // 	    {
-  // 	      Transmission_Counter[k][l] = (S1_Counter[k][l]*1.)/(S0_Counter[k][l]*1.)/20.;
-  // 	      //cout << Transmission_X_Counter[k][l] << endl;
-  // 	      //cout << Transmission_Y_Counter[k][l] << endl;
-  // 	      h_S0->SetBinContent(1 + k,1 + l,S0_Counter[k][l]);
-  // 	      h_S0_S1Gate->SetBinContent(1 + k,1 + l,S1_Counter[k][l]);
-  // 	      h_Transmission->SetBinContent(1 + k,1 + l,Transmission_Counter[k][l]);
-  // 	    }
+  //           fscanf(myfile,"%lf",&myvariable);
+  //           if ( j == a && k == 2)
+  //             {
+  //               output = myvariable;
+  //             }
   // 	}
-  //   }
-
-  // for (int i = 0; i < 4; i++)
-  // {
-  //   for (int j = 0; j < 51; j++)
-  //   {
-  //     h_Ex->SetBinContent(i + 1, j + 1, Ex_Counter[i][j]);
-  //     h_TTT_Ex->SetBinContent(i + 1, j + 1, Ex_TTT_Counter[i][j]);
-  //     h_YY1_Ex->SetBinContent(i + 1, j + 1, Ex_YY1_Counter[i][j]);
-  //   }
+  //     }
+  // fclose(myfile);
+  // return output;
   // }
 
-  // for (int i = 0; i < 31; i++)
+  // double f_Beam_Shift(int a)
   // {
-  //   for (int j = 0; j < 31; j++)
-  //   {
-  //     h_Ex_Shift->SetBinContent(i + 1, j + 1, Ex_Shift_Counter[i][j]);
-  //     h_TTT_Ex_Shift->SetBinContent(i + 1, j + 1, Ex_TTT_Shift_Counter[i][j]);
-  //     h_YY1_Ex_Shift->SetBinContent(i + 1, j + 1, Ex_YY1_Shift_Counter[i][j]);
-  //     h_Ex_Shift_X->SetBinContent(i + 1, j + 1, Ex_Shift_Counter_X[i][j]);
-  //     h_TTT_Ex_Shift_X->SetBinContent(i + 1, j + 1, Ex_TTT_Shift_Counter_X[i][j]);
-  //     h_YY1_Ex_Shift_X->SetBinContent(i + 1, j + 1, Ex_YY1_Shift_Counter_X[i][j]);
-  //     h_Ex_Shift_Y->SetBinContent(i + 1, j + 1, Ex_Shift_Counter_Y[i][j]);
-  //     h_TTT_Ex_Shift_Y->SetBinContent(i + 1, j + 1, Ex_TTT_Shift_Counter_Y[i][j]);
-  //     h_YY1_Ex_Shift_Y->SetBinContent(i + 1, j + 1, Ex_YY1_Shift_Counter_Y[i][j]);
-  //     h_Ex_Shift_XY->SetBinContent(i + 1, j + 1, Ex_Shift_Counter_XY[i][j]);
-  //     h_TTT_Ex_Shift_XY->SetBinContent(i + 1, j + 1, Ex_TTT_Shift_Counter_XY[i][j]);
-  //     h_YY1_Ex_Shift_XY->SetBinContent(i + 1, j + 1, Ex_YY1_Shift_Counter_XY[i][j]);
-  //   }
+  //   FILE *myfile;
+  //   double myvariable;
+  //   string SRPPAC;
+  //   string sector;
+  //   double output;
+  //   int j;
+  //   int k;
+
+  //   string input = "/home/jupiter/test/work/artemis-oedo/macro/Analysis/F3/Beam_T_Event.txt";
+  //   myfile=fopen(input.c_str(), "r");
+  //   for(j = 0; j < 1000; j++)
+  //     {
+  //       for (k = 0 ; k < 4; k++)
+  // 	{
+  //           fscanf(myfile,"%lf",&myvariable);
+  //           if ( j == a && k == 2)
+  //             {
+  //               output = myvariable;
+  //             }
+  // 	}
+  //     }
+  // fclose(myfile);
+  // return output;
   // }
 
-  file->Close();
-  ofile_new->cd();
-  // hlist->Write();
-  tree_new->Write("", TObject::kOverwrite);
-  ofile_new->Close();
-}
+  // double f_S1PID_Shift(int a)
+  // {
+  //   FILE *myfile;
+  //   double myvariable;
+  //   string SRPPAC;
+  //   string sector;
+  //   double output;
+  //   int j;
+  //   int k;
 
-vector<double> f_Coordinates(int ID_Front, int ID_Back)
-{
+  //   string input = "/home/jupiter/test/work/artemis-oedo/macro/Analysis/F3/S1PID_T_Event.txt";
+  //   myfile=fopen(input.c_str(), "r");
+  //   for(j = 0; j < 1250; j++)
+  //     {
+  //       for (k = 0 ; k < 4; k++)
+  // 	{
+  //           fscanf(myfile,"%lf",&myvariable);
+  //           if ( j == a && k == 2)
+  //             {
+  //               output = myvariable;
+  //             }
+  // 	}
+  //     }
+  // fclose(myfile);
+  // return output;
+  // }
 
-  double TTT_X;
-  double TTT_Y;
-  double TTT_Z;
+  // double f_AQ_Shift(int a)
+  // {
+  //   FILE *myfile;
+  //   double myvariable;
+  //   string SRPPAC;
+  //   string sector;
+  //   double output;
+  //   int j;
+  //   int k;
 
-  // Some constants of TINA extracted from NPTool simulations.
-  double TTT_length = 100.42;                                // Length of a TTT side.
-  double TTT_active_length = 97.22;                          // Length of the active region of a TTT side.
-  double TTT_strip_width = TTT_active_length / 128.;         // Width of each strip.
-  double TTT_target_to_strip = -14.14 - TTT_strip_width / 2; // Distance from target to center of first back strip.
+  //   string input = "/home/jupiter/test/work/artemis-oedo/macro/Analysis/F3/AQ_Event_2024.txt";
+  //   myfile=fopen(input.c_str(), "r");
+  //   for(j = 0; j < 200; j++)
+  //     {
+  //       for (k = 0 ; k < 4; k++)
+  // 	{
+  //           fscanf(myfile,"%lf",&myvariable);
+  //           if ( j == a && k == 2)
+  //             {
+  //               output = myvariable;
+  //             }
+  // 	}
+  //     }
+  // fclose(myfile);
+  // return output;
+  // }
 
-  // Output.
-  vector<double> Position;
-
-  // From the front strip we get the X and Y coordinates of the proton.
-  if (ID_Front < 128)
-  { // If the pixel is in the first TTT.
-    TTT_Y = -55;
-    TTT_X = (TTT_active_length - TTT_strip_width) / 2 - (TTT_strip_width * (ID_Front));
-  }
-  if (ID_Front > 127 && ID_Front < 256)
-  { // If the pixel is in the second TTT.
-    TTT_X = -55;
-    TTT_Y = -(TTT_active_length - TTT_strip_width) / 2 + (TTT_strip_width * (ID_Front - 128));
-  }
-  if (ID_Front > 255 && ID_Front < 384)
-  { // If the pixel is in the third TTT.
-    TTT_Y = 55;
-    TTT_X = -(TTT_active_length - TTT_strip_width) / 2 + (TTT_strip_width * (ID_Front - 256));
-  }
-  if (ID_Front > 383)
-  { // If the pixel is in the fourth TTT.
-    TTT_X = 55;
-    TTT_Y = (TTT_active_length - TTT_strip_width) / 2 - (TTT_strip_width * (ID_Front - 384));
-  }
-  // From the back strip we get the Z coordinate.
-  if (ID_Back < 128)
-  { // If the pixel is in the first TTT.
-    TTT_Z = TTT_target_to_strip - (TTT_strip_width * ID_Back);
-  }
-  if (ID_Back > 127 && ID_Back < 256)
-  { // If the pixel is in the second TTT.
-    TTT_Z = TTT_target_to_strip - (TTT_strip_width * (ID_Back - 128));
-  }
-  if (ID_Back > 255 && ID_Back < 384)
-  { // If the pixel is in the third TTT.
-    TTT_Z = TTT_target_to_strip - (TTT_strip_width * (ID_Back - 256));
-  }
-  if (ID_Back > 383)
-  { // If the pixel is in the fourth TTT.
-    TTT_Z = TTT_target_to_strip - (TTT_strip_width * (ID_Back - 384));
-  }
-
-  Position.push_back(TTT_X);
-  Position.push_back(TTT_Y);
-  Position.push_back(TTT_Z);
-
-  return Position;
-}
-double f_Theta(double X, double Y, double Z, double X_0, double Y_0, double Z_0)
-{
-  double Theta;
-  Theta = acos((X_0 * X + Y_0 * Y + Z_0 * Z) / ((sqrt(pow(X_0, 2) + pow(Y_0, 2) + pow(Z_0, 2)) * sqrt(pow(X, 2) + pow(Y, 2) + pow(Z, 2)))));
-  return Theta;
-}
-
-double f_Phi(double X, double Y)
-{
-  double Phi;
-  double PI = 3.14159265358979323846;
-
-  if (X < 0)
+  double f_AQ_2_S1_Y(int a)
   {
-    Phi = (PI + atan(Y / X));
-  }
-  if (X > 0)
-  {
-    if (Y > 0)
+    FILE *myfile;
+    double myvariable;
+    string SRPPAC;
+    string sector;
+    double output;
+    int j;
+    int k;
+
+    string input = "/u/ddas/software/work/artemis-oedo/output/Analysis/AQ_2_S1_Y.txt";
+    myfile = fopen(input.c_str(), "r");
+    for (j = 0; j < 319; j++)
     {
-      Phi = (atan(Y / X));
-    }
-    if (Y < 0)
-    {
-      Phi = (2 * PI + atan(Y / X));
-    }
-  }
-  if (X == 0)
-  {
-    if (Y > 0)
-    {
-      Phi = PI / 2.;
-    }
-    if (Y < 0)
-    {
-      Phi = -3 * PI / 2.;
-    }
-  }
-  return Phi;
-}
-
-double f_Excitation_Energy(double Proton_Energy, double Scattering_Angle, double Beam_Energy, double Incident_Angle)
-{
-
-  // Masses of the nuclei.
-
-  double M_49Ca = 45601.906;
-  double M_50Ca = 46535.0915;
-  double M_51Ca = 47469.8421;
-  double M_2H = 1875.61689;
-  double M_1H = 938.273993;
-
-  double Qvalue = M_50Ca + M_2H - M_51Ca - M_1H; // Q-value of the 50Ca(d,p)51Ca neutron transfer reaction.
-  // double Qvalue = M_49Ca + M_2H - M_50Ca - M_1H; //Q-value of the 49Ca(d,p)50Ca neutron transfer reaction.
-
-  // Total energies of the nuclei.
-  double E_50Ca = 0;
-  double E_51Ca = 0;
-  double E_1H = 0;
-  double E_2H = 0;
-
-  // Kinetic energies of the nuclei.
-  double T_50Ca = 0;
-  double T_51Ca = 0;
-  double T_2H = 0;
-  double T_1H = 0;
-
-  // Momenta of the nuclei.
-  double P_50Ca = 0;
-  double Px_50Ca = 0;
-  double Py_50Ca = 0;
-
-  double P_51Ca = 0;
-  double Px_51Ca = 0;
-  double Py_51Ca = 0;
-
-  double P_1H = 0;
-  double Px_1H = 0;
-  double Py_1H = 0;
-
-  double P_2H = 0;
-  double Px_2H = 0;
-  double Py_2H = 0;
-
-  double Invariant = 0;
-  double Excitation = 0;
-
-  double PI = 3.14159265358979323846;
-
-  T_50Ca = Beam_Energy * 50;
-  // T_50Ca = Beam_Energy*49;
-
-  E_50Ca = T_50Ca + M_50Ca;
-  P_50Ca = sqrt(pow(E_50Ca, 2) - pow(M_50Ca, 2));
-
-  // E_50Ca = T_50Ca + M_49Ca;
-  // P_50Ca = sqrt(pow(E_50Ca,2) - pow(M_49Ca,2));
-
-  // Px_50Ca = P_50Ca*cos(Incident_Angle);
-  // Py_50Ca = P_50Ca*sin(Incident_Angle);
-
-  Px_50Ca = P_50Ca;
-
-  // Proton.
-  T_1H = Proton_Energy;
-  E_1H = T_1H + M_1H;
-  P_1H = sqrt(pow(E_1H, 2) - pow(M_1H, 2));
-  Px_1H = P_1H * cos(Scattering_Angle);
-  Py_1H = P_1H * sin(Scattering_Angle);
-
-  // Excitation energy.
-  E_51Ca = E_50Ca + M_2H - E_1H;
-  T_51Ca = E_51Ca - M_51Ca;
-  Px_51Ca = Px_50Ca - Px_1H;
-  Py_51Ca = Py_50Ca - Py_1H;
-
-  Invariant = sqrt(pow(E_51Ca, 2) - pow(Px_51Ca, 2) - pow(Py_51Ca, 2));
-
-  Excitation = Invariant - M_51Ca;
-  // cout << T_51Ca << endl;
-  return Excitation;
-}
-
-double f_list(int a, int b)
-{
-  FILE *myfile;
-  double myvariable;
-  string SRPPAC;
-  string sector;
-  double output;
-  int j;
-  int k;
-
-  string input = "/u/ddas/software/work/artemis-oedo/output/Analysis/TTT_B_param.txt";
-  myfile = fopen(input.c_str(), "r");
-  for (j = 0; j < HEIGHT; j++)
-  {
-    for (k = 0; k < WIDTH; k++)
-    {
-      fscanf(myfile, "%lf", &myvariable);
-      if (j == b && k == a)
+      for (k = 0; k < 4; k++)
       {
-        output = myvariable;
+        fscanf(myfile, "%lf", &myvariable);
+        if (j == a && k == 2)
+        {
+          output = myvariable;
+        }
       }
     }
+    fclose(myfile);
+    return output;
   }
-  fclose(myfile);
-  return output;
-}
 
-// double f_PID_Shift(int a)
-// {
-//   FILE *myfile;
-//   double myvariable;
-//   string SRPPAC;
-//   string sector;
-//   double output;
-//   int j;
-//   int k;
-//    str ing input = "/home/jupiter/test/work/artemis-oedo/macro/Analysis/F3/PID_T_Event.txt";
-//   myfile=fopen(input.c_str(), "r");
-//   for(j = 0; j < 2500; j++)
-//     {
-//       for (k = 0 ; k < 4; k++)
-// 	{
-//           fscanf(myfile,"%lf",&myvariable);
-//           if ( j == a && k == 2)
-//             {
-//               output = myvariable;
-//             }
-// 	}
-//     }
-// fclose(myfile);
-// return output;
-// }
-
-// double f_Beam_Shift(int a)
-// {
-//   FILE *myfile;
-//   double myvariable;
-//   string SRPPAC;
-//   string sector;
-//   double output;
-//   int j;
-//   int k;
-
-//   string input = "/home/jupiter/test/work/artemis-oedo/macro/Analysis/F3/Beam_T_Event.txt";
-//   myfile=fopen(input.c_str(), "r");
-//   for(j = 0; j < 1000; j++)
-//     {
-//       for (k = 0 ; k < 4; k++)
-// 	{
-//           fscanf(myfile,"%lf",&myvariable);
-//           if ( j == a && k == 2)
-//             {
-//               output = myvariable;
-//             }
-// 	}
-//     }
-// fclose(myfile);
-// return output;
-// }
-
-// double f_S1PID_Shift(int a)
-// {
-//   FILE *myfile;
-//   double myvariable;
-//   string SRPPAC;
-//   string sector;
-//   double output;
-//   int j;
-//   int k;
-
-//   string input = "/home/jupiter/test/work/artemis-oedo/macro/Analysis/F3/S1PID_T_Event.txt";
-//   myfile=fopen(input.c_str(), "r");
-//   for(j = 0; j < 1250; j++)
-//     {
-//       for (k = 0 ; k < 4; k++)
-// 	{
-//           fscanf(myfile,"%lf",&myvariable);
-//           if ( j == a && k == 2)
-//             {
-//               output = myvariable;
-//             }
-// 	}
-//     }
-// fclose(myfile);
-// return output;
-// }
-
-// double f_AQ_Shift(int a)
-// {
-//   FILE *myfile;
-//   double myvariable;
-//   string SRPPAC;
-//   string sector;
-//   double output;
-//   int j;
-//   int k;
-
-//   string input = "/home/jupiter/test/work/artemis-oedo/macro/Analysis/F3/AQ_Event_2024.txt";
-//   myfile=fopen(input.c_str(), "r");
-//   for(j = 0; j < 200; j++)
-//     {
-//       for (k = 0 ; k < 4; k++)
-// 	{
-//           fscanf(myfile,"%lf",&myvariable);
-//           if ( j == a && k == 2)
-//             {
-//               output = myvariable;
-//             }
-// 	}
-//     }
-// fclose(myfile);
-// return output;
-// }
-
-double f_AQ_2_S1_Y(int a)
-{
-  FILE *myfile;
-  double myvariable;
-  string SRPPAC;
-  string sector;
-  double output;
-  int j;
-  int k;
-
-  string input = "/u/ddas/software/work/artemis-oedo/output/Analysis/AQ_2_S1_Y.txt";
-  myfile = fopen(input.c_str(), "r");
-  for (j = 0; j < 319; j++)
+  double f_AQ_2_S1_X(int a)
   {
-    for (k = 0; k < 4; k++)
+    FILE *myfile;
+    double myvariable;
+    string SRPPAC;
+    string sector;
+    double output;
+    int j;
+    int k;
+
+    string input = "/u/ddas/software/work/artemis-oedo/output/Analysis/AQ_2_S1_X.txt";
+    myfile = fopen(input.c_str(), "r");
+    for (j = 0; j < 559; j++)
     {
-      fscanf(myfile, "%lf", &myvariable);
-      if (j == a && k == 2)
+      for (k = 0; k < 4; k++)
       {
-        output = myvariable;
+        fscanf(myfile, "%lf", &myvariable);
+        if (j == a && k == 2)
+        {
+          output = myvariable;
+        }
       }
     }
+    fclose(myfile);
+    return output;
   }
-  fclose(myfile);
-  return output;
-}
 
-double f_AQ_2_S1_X(int a)
-{
-  FILE *myfile;
-  double myvariable;
-  string SRPPAC;
-  string sector;
-  double output;
-  int j;
-  int k;
-
-  string input = "/u/ddas/software/work/artemis-oedo/output/Analysis/AQ_2_S1_X.txt";
-  myfile = fopen(input.c_str(), "r");
-  for (j = 0; j < 559; j++)
+  double f_Energy(double TTT_E, double Theta)
   {
-    for (k = 0; k < 4; k++)
-    {
-      fscanf(myfile, "%lf", &myvariable);
-      if (j == a && k == 2)
-      {
-        output = myvariable;
-      }
-    }
+    double Energy;
+    Energy = 0.124546059382704 * pow(TTT_E * sin(Theta), 4) - 2.11115981536274 * pow(TTT_E * sin(Theta), 3) + 13.6871829996149 * pow(TTT_E * sin(Theta), 2) - 41.3737617194654 * pow(TTT_E * sin(Theta), 1) + 57.0318203606131;
+    return Energy;
   }
-  fclose(myfile);
-  return output;
-}
-
-double f_Energy(double TTT_E, double Theta)
-{
-  double Energy;
-  Energy = 0.124546059382704 * pow(TTT_E * sin(Theta), 4) - 2.11115981536274 * pow(TTT_E * sin(Theta), 3) + 13.6871829996149 * pow(TTT_E * sin(Theta), 2) - 41.3737617194654 * pow(TTT_E * sin(Theta), 1) + 57.0318203606131;
-  return Energy;
-}
