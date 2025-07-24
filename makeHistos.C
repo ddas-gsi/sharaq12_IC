@@ -20,7 +20,15 @@
 void makeHistos()
 {
     // Physics Run for 2024
-    std::vector<std::string> RUN_list = {"1052", "1053", "1054", "1055"};
+    // std::vector<std::string> RUN_list = {"1052", "1053", "1055"}; // After Carlos correction
+    std::vector<std::string> RUN_list = {"1056", "1057", "1058", "1059"}; // for Carlos Presentation in OEDO workshop on 24.07.2025. this is with prev way of reduced_chi2
+    // std::vector<std::string> RUN_list = {"1052", "1053", "1054", "1055"};
+
+    // Some constants
+    const Double_t chi2_mean = 2.344; // Mean of reduced chi2 distribution
+    const Double_t chi2_sigma = 1.25; // Standard deviation of reduced chi2 distribution
+    // const Double_t chi2_mean = 0.83; // Mean of reduced chi2 distribution
+    // const Double_t chi2_sigma = 0.4; // Standard deviation of reduced chi2 distribution
 
     // We TChain the trees
     TChain *tree_chained = new TChain("tree_new");
@@ -109,6 +117,9 @@ void makeHistos()
     // Create Histograms
     // PID for All Isotopes
     // Use the Branch AQ_2_0
+    TH2F *Z_vs_AoQ_all_from_avg3Pads_wo_Chi2 = new TH2F("Z_vs_AoQ_all_from_avg3Pads_wo_Chi2", "Z vs AoQ All; AoQ; Z", 1000, 2, 3, 1000, 10, 30);
+    hlist->Add(Z_vs_AoQ_all_from_avg3Pads_wo_Chi2);
+
     TH2F *Z_vs_AoQ_all_from_avg3Pads = new TH2F("Z_vs_AoQ_all_from_avg3Pads", "Z vs AoQ All; AoQ; Z", 1000, 2, 3, 1000, 10, 30);
     hlist->Add(Z_vs_AoQ_all_from_avg3Pads);
 
@@ -165,7 +176,10 @@ void makeHistos()
 
         tree_chained->GetEntry(i);
 
-        // if (abs(chi2 - 2) < 5)
+        // Fill Histogram without Chi2 Cut for All Isotopes
+        Z_vs_AoQ_all_from_avg3Pads_wo_Chi2->Fill(AQ_2_0, Z_a3EBetaS1);
+
+        if (abs(chi2 - chi2_mean) < chi2_sigma)
         {
             // Fill Histograms for All Isotopes
             Z_vs_AoQ_all_from_avg3Pads->Fill(AQ_2_0, Z_a3EBetaS1);
@@ -174,7 +188,7 @@ void makeHistos()
             A_vs_AoQ->Fill(AQ_2_0, A_sRangeBetaS1);
 
             // Fill Histograms for 50Ca
-            if (FE9cut50Ca20->IsInside(PID_T_0, FE9_X_0) && abs(chi2 - 2) < 2)
+            if (FE9cut50Ca20->IsInside(PID_T_0, FE9_X_0) && abs(chi2 - chi2_mean) < chi2_sigma)
             {
                 Z_vs_AoQ_50Ca_from_avg3Pads->Fill(AQ_2_0, Z_a3EBetaS1);
                 Z_vs_AoQ_50Ca_from_SplinePeak->Fill(AQ_2_0, Z_sPeakES1X);
@@ -188,14 +202,14 @@ void makeHistos()
             }
 
             // Fill Histograms for 51Sc
-            else if (FE9cut51Sc21->IsInside(PID_T_0, FE9_X_0) && abs(chi2 - 2) < 2)
+            else if (FE9cut51Sc21->IsInside(PID_T_0, FE9_X_0) && abs(chi2 - chi2_mean) < chi2_sigma)
             {
                 Z_vs_AoQ_51Sc_from_avg3Pads->Fill(AQ_2_0, Z_a3EBetaS1);
                 Z_vs_AoQ_51Sc_from_SplinePeak->Fill(AQ_2_0, Z_sPeakES1X);
             }
 
             // Fill Histograms for 49K
-            else if (FE9cut49K19->IsInside(PID_T_0, FE9_X_0) && abs(chi2 - 2) < 2)
+            else if (FE9cut49K19->IsInside(PID_T_0, FE9_X_0) && abs(chi2 - chi2_mean) < chi2_sigma)
             {
                 Z_vs_AoQ_49K_from_avg3Pads->Fill(AQ_2_0, Z_a3EBetaS1);
                 Z_vs_AoQ_49K_from_SplinePeak->Fill(AQ_2_0, Z_sPeakES1X);

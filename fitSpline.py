@@ -237,7 +237,8 @@ def fit_spline(filtered_dE_dX_Exp, x_spline, y_spline):
     # Optionally scale and compute chi2
     scaled_spline = matched_y_spline * y_scaling
     chi2 = np.sum((y_target - scaled_spline) ** 2)
-    reduced_chi2 = chi2 / (len(y_target) - 2)  # Reduced chi-square = chi2 / (N - p)
+    # reduced_chi2 = chi2 / (len(y_target) - 2)  # Reduced chi-square = chi2 / (N - p)
+    reduced_chi2 = chi2 / (30 - 2)  # Reduced chi-square = chi2 / (N - p)  running now on 1052 1053
 
     print("Optimal x_scaling:", x_scaling)
     print("Optimal y_scaling:", y_scaling)

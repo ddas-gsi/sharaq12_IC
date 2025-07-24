@@ -1,0 +1,502 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
+from itertools import product
+from datetime import datetime
+from multiprocessing import Pool
+from functools import partial
+import os
+import csv
+import ROOT
+
+# Define the constants
+
+c = 300000000;	# velocity in m/s
+amu_E = 931.494; # in MeV/u
+
+distance_F3_FE9 = 68.54307;  # distance in meter
+distance_FE9_FE12 = 14.87168; # distance in meter   
+distance_FE12_S1 = 9.4892;	 # distance in meter
+
+
+def calculateBeta(TOF, pathLength):
+    if TOF>0:
+        velocity = (pathLength / TOF) * pow(10, 9);
+        beta = velocity / c;
+    elif TOF <= 0:
+        beta = -1000000;    # maybe put -1000000 later
+    return beta;
+
+def fn_peak38(x):
+    y = np.full_like(x, 38)  # Create an array of 38 with the same shape as x
+    return y
+
+def peakS1Y_correction_function(x, *par):
+    y = par[0] + par[1]*x + par[2]*x**2 + par[3]*x**3 
+    # y = par[0] + par[1]*x + par[2]*x**2 + par[3]*x**3 + par[4]*x**4 + par[5]*x**5 + par[6]*x**6 + par[7]*x**7 + par[8]*x**8 + par[9]*x**9
+    # y = par[0] + par[1]*x + par[2]*x**2 + par[3]*x**3 + par[4]*x**4 + par[5]*x**5 + par[6]*x**6 + par[7]*x**7 + par[8]*x**8
+    # y = par[0] + par[1]*x + par[2]*x**2 + par[3]*x**3 + par[4]*x**4 + par[5]*x**5 + par[6]*x**6 + par[7]*x**7 
+    return y
+
+def peakS1Y_correction_factor(x, *par):
+    dy = fn_peak38(x) - peakS1Y_correction_function(x, *par)
+    return dy
+
+def peakS1X_correction_function(x, *par):
+    y = par[0] + par[1]*x + par[2]*x**2 + par[3]*x**3 + par[4]*x**4 + par[5]*x**5
+    # y = par[0] + par[1]*x + par[2]*x**2 + par[3]*x**3 + par[4]*x**4 + par[5]*x**5 + par[6]*x**6 + par[7]*x**7 + par[8]*x**8
+    # y = par[0] + par[1]*x + par[2]*x**2 + par[3]*x**3 + par[4]*x**4 + par[5]*x**5 + par[6]*x**6 + par[7]*x**7 + par[8]*x**8 + par[9]*x**9  
+    return y
+
+def peakS1X_correction_factor(x, *par):
+    dy = fn_peak38(x) - peakS1X_correction_function(x, *par)
+    return dy
+
+def fn_range147(x):
+    y = np.full_like(x, 147.6647)   # Create an array of 147.6647 with the same shape as x
+    return y
+
+def fn_range150(x):
+    y = np.full_like(x, 150.0)   # Create an array of 150.0 with the same shape as x
+    return y
+
+def fn_rangeBetaS1LISE(x):
+    betaS1 = [0.17, 0.18, 0.19]
+    # range_betaS1_2_100 = [117.870, 155.759, 185.228]
+    range_betaS1_2_100 = [122.23598, 155.759, 188.72326]
+
+    # Fit a straight line (degree 1 polynomial)
+    m, c = np.polyfit(betaS1, range_betaS1_2_100, 1)
+
+    y = m * x + c
+    return y
+
+def rangeBetaS1_correction_function(x, *par):
+    y = par[0] + par[1]*x
+    return y
+
+def rangeBetaS1_correction_factorStraight(x, *par):
+    dy = fn_range150(x) - rangeBetaS1_correction_function(x, *par)
+    return dy
+
+def rangeBetaS1_correction_factorLISE(x, *par):
+    dy = fn_rangeBetaS1LISE(x) - rangeBetaS1_correction_function(x, *par)
+    return dy
+
+def fn_delta150(x):
+    y = np.full_like(x, 150.0)   # Create an array of 150.0 with the same shape as x
+    return y
+
+def deltaS1Y_correction_function(x, *par):
+    y = par[0] + par[1]*x
+    return y
+
+def deltaS1Y_correction_factor(x, *par):
+    dy = fn_delta150(x) - deltaS1Y_correction_function(x, *par)
+    return dy
+
+def calculateBetaFromEnergy(energy):
+    '''
+    totalE = energy + amu_E    in MeV/u  
+    '''
+    amu_E = 931.494
+    totalE = energy + amu_E
+    gamma = totalE / amu_E
+    beta = np.sqrt(1 - ((1 / gamma)**2))
+    return beta
+
+def calculateNormalizedRange(energy):
+    
+    if energy == 15.5:
+        Range = 19 * 25.233 
+    elif energy == 15.0:
+        Range = 17.5 * 25.233
+    elif energy == 14.5:
+        Range = 16 * 25.233
+    elif energy == 14.0:
+        Range = 14 * 25.233
+    
+    beta = calculateBetaFromEnergy(energy)
+    normalizedR = (Range/beta**2)/100
+    print(f"Beta: {beta}, Normalized Range: {normalizedR}")
+    return beta, normalizedR
+
+
+# # Read the root file
+# rootFile = ROOT.TFile("/u/ddas/software/work/artemis-oedo/output/Analysis/physOutput/outputRange/rangeCorrection/1053_Analysis_2024.root", "UPDATE")
+rootFile = ROOT.TFile("/u/ddas/software/work/artemis-oedo/output/Analysis/physOutput/outputRange/rangeCorrection/1052_Analysis_2024.root", "UPDATE")
+tree = rootFile.Get("tree_new")     # this method also works...
+# # Get the number of entries in the tree
+num_entries = tree.GetEntries()
+# # Print the number of entries
+print(f"Number of entries in the TTree: {num_entries}")
+
+# # Create a canvas 3x3 for the plots
+c1 = ROOT.TCanvas("c1", "c1", 2000, 1350)
+c1.Divide(5,4)
+
+# # define the params of the polynomial
+# paramsS1Y = (53.514, -0.0397363, 0.000203859, -5.80324e-06, -9.21006e-07, -2.63447e-10, 4.16323e-10, 3.00016e-14, -5.84061e-14)                   # Don't use
+# paramsS1Y = (55.1328, -0.0304577, 0.000835732, -1.31454e-05, -1.32604e-06, 5.37688e-09, 4.67963e-10, -1.17545e-12, -5.37494e-14)                  # Don't use
+# paramsS1Y = (39.3423, -0.02654, -5.7014e-05 , -2.02977e-05, -4.09601e-07, 1.1118e-08, 1.71941e-10, -1.78212e-12, -2.38595e-14)                    # Don't use
+# paramsS1X = (38.1265, -0.0493396, 0.000163553, 3.51765e-05, -5.20618e-08, -7.2267e-09, 2.92577e-12, 5.7518e-13, -1.89632e-18, -1.55787e-17)       # Don't use
+# paramsBetaS1 = (-697.227, 4834.9)                                                                                                                 # Don't use 
+# paramsS1Y = (39.5086, -0.033658, 6.47468e-05, -7.12585e-06, -5.62908e-07, -1.81907e-10, 2.40752e-10, 1.40551e-12, -3.20213e-14, -2.79289e-16)     # Don't use
+# paramsS1X = (38.4112, -0.0517583, 0.000181025, 3.54775e-05, -6.46563e-08, -6.62366e-09, 4.98468e-12, 4.82128e-13, -9.58585e-17, -1.20121e-17)     # Don't use
+# paramsBetaS1 = (-706.273, 4861.6)   # Don't use
+
+paramsS1Y = (38.6458, -0.044613, -0.000293717, -2.88329e-07)
+paramsS1X = (38.3871, -0.0371968, -0.000327973, -1.71824e-06, 3.29246e-08, 2.25249e-10)
+paramsBetaS1 = (-759.937, 5178.34)
+paramsDeltaS1Y = (149.405, 0.0957561)
+
+# Create a TList
+hlist = ROOT.TList()
+# # Define the histograms
+# Peak Corrections
+h_peakS1YCa = ROOT.TH2F("peakCa", "peakCa:S1_Y_0; S1_Y_0; peakCa", 1000, -200, 200, 1000, 1, 70)
+h_peakS1YAll = ROOT.TH2F("peakAll", "peakAll:S1_Y_0; S1_Y_0; peakAll", 1000, -200, 200, 1000, 1, 70)
+
+h_peakS1Y_correctedCa = ROOT.TH2F("peak_S1Y_correctedCa", "peakS1YCa:S1_Y_0; S1_Y_0; peakS1YCa", 1000, -200, 200, 1000, 1, 70)
+h_peakS1Y_correctedAll = ROOT.TH2F("peak_S1Y_correctedAll", "peakS1YAll:S1_Y_0; S1_Y_0; peakS1YAll", 1000, -200, 200, 1000, 1, 70)
+
+h_peakS1Y_XCa = ROOT.TH2F("peakS1YCa", "peakS1YCa:S1_X_0; S1_X_0; peakS1YCa", 1000, -200, 200, 1000, 1, 70)
+h_peakS1Y_XAll = ROOT.TH2F("peakS1YAll", "peakS1YAll:S1_X_0; S1_X_0; peakS1YAll", 1000, -200, 200, 1000, 1, 70)
+
+h_peakS1YX_correctedCa = ROOT.TH2F("peak_S1YX_correctedCa", "peakS1YXCa:S1_X_0; S1_X_0; peakS1YXCa", 1000, -200, 200, 1000, 1, 70)
+h_peakS1YX_correctedAll = ROOT.TH2F("peak_S1YX_correctedAll", "peakS1YXAll:S1_X_0; S1_X_0; peakS1YXAll", 1000, -200, 200, 1000, 1, 70)
+
+h1D_peakS1YCa = ROOT.TH1F("h1D_peakS1YCa", "peakS1YCa; peakS1YCa", 1000, 0, 70)
+hlist.Add(h1D_peakS1YCa)
+h1D_peakS1YXCa = ROOT.TH1F("h1D_peakS1YXCa", "peakS1YXCa; peakS1YXCa", 1000, 0, 70)
+hlist.Add(h1D_peakS1YXCa)
+h1D_peakS1YAll = ROOT.TH1F("h1D_peakS1YAll", "peakS1YAll; peakS1YAll", 1000, 0, 70)
+hlist.Add(h1D_peakS1YAll)
+h1D_peakS1YXAll = ROOT.TH1F("h1D_peakS1YXAll", "peakS1YXAll; peakS1YXAll", 1000, 0, 70)
+hlist.Add(h1D_peakS1YXAll)
+
+
+# h_peakS1Y_betaS1 = ROOT.TH2F("peakS1Y_betaS1", "peakS1Y:betaS1; betaS1; peakS1Y", 1000, 0.15, 0.19, 1000, 1, 70)
+# h_peakS1YX_betaS1 = ROOT.TH2F("peakS1YX_betaS1", "peakS1YX:betaS1; betaS1; peakS1YX", 1000, 0.15, 0.19, 1000, 1, 70)
+
+# Range Corrections
+h_rangeCaBeta2S1 = ROOT.TH2F("rangeCa/betaS1^2/100", "rangeCa/betaS1^2/100:betaS1; betaS1; rangeCa/betaS1^2/100", 1000, 0.15, 0.19, 1000, 0, 300)
+h_deltaCa_st = ROOT.TH2F("deltaCa_st", "deltaCa_st:betaS1; betaS1; deltaCa_st", 1000, 0.15, 0.19, 1000, 0, 300)
+h_deltaCa_lise = ROOT.TH2F("deltaCa_lise", "deltaCa_lise:betaS1; betaS1; deltaCa_lise", 1000, 0.15, 0.19, 1000, 0, 300)
+h_rangeCa_st_corrected = ROOT.TH2F("rangeCa corrected by Straight Line", "rangeCa Corrected by Straight Line:betaS1; betaS1; rangeCa Corrected", 1000, 0.15, 0.19, 1000, 0, 800)
+h_rangeCa_lise_corrected = ROOT.TH2F("rangeCa corrected by LISE", "rangeCa Corrected by LISE:betaS1; betaS1; rangeCa Corrected", 1000, 0.15, 0.19, 1000, 0, 800)
+
+h_rangeAllBeta2S1 = ROOT.TH2F("rangeAll/betaS1^2/100", "rangeAll/betaS1^2/100:betaS1; betaS1; rangeAll/betaS1^2/100", 1000, 0.15, 0.19, 1000, 0, 300)
+h_deltaAll_st = ROOT.TH2F("deltaAll_st", "deltaAll_st:betaS1; betaS1; deltaAll_st", 1000, 0.15, 0.19, 1000, 0, 300)
+h_deltaAll_lise = ROOT.TH2F("deltaAll_lise", "deltaAll_lise:betaS1; betaS1; deltaAll_lise", 1000, 0.15, 0.19, 1000, 0, 300)
+h_rangeAll_st_corrected = ROOT.TH2F("rangeAll corrected by Straight Line", "rangeAll Corrected by Straight Line:betaS1; betaS1; rangeAll Corrected", 1000, 0.15, 0.19, 1000, 0, 800)
+h_rangeAll_lise_corrected = ROOT.TH2F("rangeAll corrected by LISE", "rangeAll Corrected by LISE:betaS1; betaS1; rangeAll Corrected", 1000, 0.15, 0.19, 1000, 0, 800)
+
+h1D_deltaCa_st = ROOT.TH1F("h1D_deltaCa_st", "deltaCa_st; deltaCa_st", 1000, 0, 300)
+hlist.Add(h1D_deltaCa_st)
+h1D_rangeCa_st = ROOT.TH1F("h1D_rangeCa_st", "rangeCa_st; rangeCa_st", 1000, 0, 800)
+hlist.Add(h1D_rangeCa_st)
+
+h1D_deltaAll_st = ROOT.TH1F("h1D_deltaAll_st", "deltaAll_st; deltaAll_st", 1000, 0, 300)
+hlist.Add(h1D_deltaAll_st)
+h1D_rangeAll_st = ROOT.TH1F("h1D_rangeAll_st", "rangeAll_st; rangeAll_st", 1000, 0, 800)
+hlist.Add(h1D_rangeAll_st)
+
+h1D_deltaCa_lise = ROOT.TH1F("h1D_deltaCa_lise", "deltaCa_lise; deltaCa_lise", 1000, 0, 300)
+hlist.Add(h1D_deltaCa_lise)
+h1D_deltaAll_lise = ROOT.TH1F("h1D_deltaAll_lise", "deltaAll_lise; deltaAll_lise", 1000, 0, 300)
+hlist.Add(h1D_deltaAll_lise)
+
+h1D_deltaCa_stS1Y = ROOT.TH1F("h1D_deltaCa_stS1Y", "deltaCa_stS1Y; deltaCa_stS1Y", 1000, 0, 300)
+hlist.Add(h1D_deltaCa_stS1Y)
+h1D_deltaAll_stS1Y = ROOT.TH1F("h1D_deltaAll_stS1Y", "deltaAll_stS1Y; deltaAll_stS1Y", 1000, 0, 300)
+hlist.Add(h1D_deltaAll_stS1Y)
+
+h2D_deltaAll_stS1Y_vs_S1Y = ROOT.TH2F("h2D_deltaAll_stS1Y_vs_S1Y", "deltaAll_stS1Y vs S1_Y_0; S1_Y_0; deltaAll_stS1Y", 1000, -150, 150, 1000, 0, 300)
+hlist.Add(h2D_deltaAll_stS1Y_vs_S1Y)
+h2D_deltaAll_stS1Y_vs_betaS1 = ROOT.TH2F("h2D_deltaAll_stS1Y_vs_betaS1", "deltaAll_stS1Y vs betaS1; betaS1; deltaAll_stS1Y", 1000, 0.15, 0.19, 1000, 0, 300)
+hlist.Add(h2D_deltaAll_stS1Y_vs_betaS1)
+
+
+# PID 
+h_peakS1YCa_deltaCa_st = ROOT.TH2F("peakS1YCa deltaCa_st", "peakS1YCa:deltaCa_st; peakS1YCa; deltaCa_st", 1000, 0, 300, 1000, 0, 70)
+h_peakS1YXCa_deltaCa_st = ROOT.TH2F("peakS1YXCa deltaCa_st", "peakS1YXCa:deltaCa_st; peakS1YXCa; deltaCa_st", 1000, 0, 300, 1000, 0, 70)
+h_peakS1YCa_deltaCa_lise = ROOT.TH2F("peakS1YCa deltaCa_lise", "peakS1YCa:deltaCa_lise; peakS1YCa; deltaCa_lise", 1000, 0, 300, 1000, 0, 70)
+h_peakS1YXCa_deltaCa_lise = ROOT.TH2F("peakS1YXCa deltaCa_lise", "peakS1YXCa:deltaCa_lise; peakS1YXCa; deltaCa_lise", 1000, 0, 300, 1000, 0, 70)
+
+h_peakS1YAll_deltaAll_st = ROOT.TH2F("peakS1YAll deltaAll_st", "peakS1YAll:deltaAll_st; peakS1YAll; deltaAll_st", 1000, 0, 300, 1000, 0, 70)
+h_peakS1YXAll_deltaAll_st = ROOT.TH2F("peakS1YXAll deltaAll_st", "peakS1YXAll:deltaAll_st; peakS1YXAll; deltaAll_st", 1000, 0, 300, 1000, 0, 70)
+h_peakS1YAll_deltaAll_lise = ROOT.TH2F("peakS1YAll deltaAll_lise", "peakS1YAll:deltaAll_lise; peakS1YAll; deltaAll_lise", 1000, 0, 300, 1000, 0, 70)
+h_peakS1YXAll_deltaAll_lise = ROOT.TH2F("peakS1YXAll deltaAll_lise", "peakS1YXAll:deltaAll_lise; peakS1YXAll; deltaAll_lise", 1000, 0, 300, 1000, 0, 70)
+
+
+# Add all the histogram to the histogram TList
+hlist.Add(h_peakS1YCa)
+hlist.Add(h_peakS1YAll)
+hlist.Add(h_peakS1Y_correctedCa)
+hlist.Add(h_peakS1Y_correctedAll)
+hlist.Add(h_peakS1Y_XCa)
+hlist.Add(h_peakS1Y_XAll)
+hlist.Add(h_peakS1YX_correctedCa)
+hlist.Add(h_peakS1YX_correctedAll)
+hlist.Add(h_rangeCaBeta2S1)
+hlist.Add(h_deltaCa_st)
+hlist.Add(h_deltaCa_lise)
+hlist.Add(h_rangeCa_st_corrected)
+hlist.Add(h_rangeCa_lise_corrected)
+hlist.Add(h_rangeAllBeta2S1)
+hlist.Add(h_deltaAll_st)
+hlist.Add(h_deltaAll_lise)
+hlist.Add(h_rangeAll_st_corrected)
+hlist.Add(h_rangeAll_lise_corrected)
+hlist.Add(h_peakS1YCa_deltaCa_st)
+hlist.Add(h_peakS1YXCa_deltaCa_st)
+hlist.Add(h_peakS1YCa_deltaCa_lise)
+hlist.Add(h_peakS1YXCa_deltaCa_lise)
+hlist.Add(h_peakS1YAll_deltaAll_st)
+hlist.Add(h_peakS1YXAll_deltaAll_st)
+hlist.Add(h_peakS1YAll_deltaAll_lise)
+hlist.Add(h_peakS1YXAll_deltaAll_lise)
+
+
+
+# Define variables for the new branches
+peakS1YCa = np.zeros(1, dtype=np.float64)       # peakS1YCa is the corrected peakCa for S1_Y_0
+peakS1YXCa = np.zeros(1, dtype=np.float64)      # peakS1YXCa is the corrected peakS1YCa for S1_X_0
+deltaCa_st = np.zeros(1, dtype=np.float64)      # range correction to flat line, we call it deltaCa
+deltaCa_lise = np.zeros(1, dtype=np.float64)    # range correction using lise Calibration, we call it deltaCa
+
+peakS1YAll = np.zeros(1, dtype=np.float64)      # peakS1Y is the corrected peakAll for S1_Y_0
+peakS1YXAll = np.zeros(1, dtype=np.float64)     # peakS1YX is the corrected peakS1Y for S1_X_0
+deltaAll_st = np.zeros(1, dtype=np.float64)     # range correction to flat line, we call it delta
+deltaAll_lise = np.zeros(1, dtype=np.float64)   # range correction using lise Calibration, we call it delta
+
+deltaCa_stS1Y = np.zeros(1, dtype=np.float64)   # deltaCa correction for S1_Y_0
+deltaAll_stS1Y = np.zeros(1, dtype=np.float64)  # deltaAll correction for S1_Y_0 
+
+# Add the new branches to the output tree
+peakS1YCa_branch = tree.Branch("peakS1YCa", peakS1YCa, "peakS1YCa/D")                   # /D for double.. peakS1Y is the corrected peak_expt for S1_Y_0
+peakS1YXCa_branch = tree.Branch("peakS1YXCa", peakS1YXCa, "peakS1YXCa/D")               # /D for double.. peakS1YX is the corrected peakS1Y for S1_X_0
+deltaCa_st_branch = tree.Branch("deltaCa_st", deltaCa_st, "deltaCa_st/D")               # /D for double..
+deltaCa_lise_branch = tree.Branch("deltaCa_lise", deltaCa_lise, "deltaCa_lise/D")       # /D for double..
+
+peakS1YAll_branch = tree.Branch("peakS1YAll", peakS1YAll, "peakS1YAll/D")               # /D for double.. peakS1Y is the corrected peak_expt for S1_Y_0
+peakS1YXAll_branch = tree.Branch("peakS1YXAll", peakS1YXAll, "peakS1YXAll/D")           # /D for double.. peakS1YX is the corrected peakS1Y for S1_X_0
+deltaAll_st_branch = tree.Branch("deltaAll_st", deltaAll_st, "deltaAll_st/D")           # /D for double..
+deltaAll_lise_branch = tree.Branch("deltaAll_lise", deltaAll_lise, "deltaAll_lise/D")   # /D for double..
+
+deltaCa_stS1Y_branch = tree.Branch("deltaCa_stS1Y", deltaCa_stS1Y, "deltaCa_stS1Y/D")       # /D for double..
+deltaAll_stS1Y_branch = tree.Branch("deltaAll_stS1Y", deltaAll_stS1Y, "deltaAll_stS1Y/D")   # /D for double..
+
+# # Enable all branches
+tree.SetBranchStatus("*", 1)    
+
+count = 0
+
+for i_Event in range(num_entries):        
+    tree.GetEntry(i_Event)
+
+    if (i_Event % 100000 == 0):
+        print(f"Event Number: {i_Event}")
+
+
+    # Define the branches
+    PID_T_0 = getattr(tree, "PID_T_0")
+    Beam_T_0 = getattr(tree, "Beam_T_0")
+    S1PID_T_0 = getattr(tree, "S1PID_T_0")
+    S1_X_0 = getattr(tree, "S1_X_0")
+    S1_Y_0 = getattr(tree, "S1_Y_0")
+    betaFE9_0 = getattr(tree, "betaFE9_0")
+    betaFE12_0 = getattr(tree, "betaFE12_0")
+    betaS1_0 = getattr(tree, "betaS1_0")
+
+    peakCa = getattr(tree, "peakCa")
+    rangeCa = getattr(tree, "rangeCa")
+
+    peakAll = getattr(tree, "peakAll")
+    rangeAll = getattr(tree, "rangeAll")
+
+    # Initialize new branches to -1000000
+    peakS1YCa[0] = -1000000
+    peakS1YXCa[0] = -1000000
+    deltaCa_st[0] = -1000000
+    deltaCa_lise[0] = -1000000
+
+    peakS1YAll[0] = -1000000
+    peakS1YXAll[0] = -1000000
+    deltaAll_st[0] = -1000000
+    deltaAll_lise[0] = -1000000
+
+#     # Calculate beta for different part of beamline
+#     betaFE9[0] = calculateBeta(PID_T_0, distance_F3_FE9)
+#     betaFE12[0] = calculateBeta(Beam_T_0 + 19.23, distance_FE9_FE12)      # +19.23 ns is the TOF offset for Beam_T_0
+#     betaS1[0] = calculateBeta(S1PID_T_0 - 434.060, distance_FE12_S1)     # -434.060 ns is the TOF offset for S1PID_T_0
+
+    if (peakAll>0):   
+
+        peakS1YCa[0] = peakS1Y_correction_factor(S1_Y_0, *paramsS1Y) + peakCa
+        h_peakS1Y_correctedCa.Fill(S1_Y_0, peakS1YCa[0])
+        h1D_peakS1YCa.Fill(peakS1YCa[0])
+
+        peakS1YAll[0] = peakS1Y_correction_factor(S1_Y_0, *paramsS1Y) + peakAll
+        h_peakS1Y_correctedAll.Fill(S1_Y_0, peakS1YAll[0])
+        h1D_peakS1YAll.Fill(peakS1YAll[0])
+
+        peakS1YXCa[0] = peakS1X_correction_factor(S1_X_0, *paramsS1X) + peakS1YCa[0]
+        h_peakS1YX_correctedCa.Fill(S1_X_0, peakS1YXCa[0])
+        h1D_peakS1YXCa.Fill(peakS1YXCa[0])
+
+        peakS1YXAll[0] = peakS1X_correction_factor(S1_X_0, *paramsS1X) + peakS1YAll[0]
+        h_peakS1YX_correctedAll.Fill(S1_X_0, peakS1YXAll[0]) 
+        h1D_peakS1YXAll.Fill(peakS1YXAll[0])
+
+
+        deltaCa_st[0] = rangeBetaS1_correction_factorStraight(betaS1_0, *paramsBetaS1) + rangeCa/(betaS1_0**2)/100
+        h_deltaCa_st.Fill(betaS1_0, deltaCa_st[0])
+        h1D_deltaCa_st.Fill(deltaCa_st[0])  
+
+
+        deltaCa_lise[0] = rangeBetaS1_correction_factorLISE(betaS1_0, *paramsBetaS1) + rangeCa/(betaS1_0**2)/100
+        h_deltaCa_lise.Fill(betaS1_0, deltaCa_lise[0])
+
+        h1D_rangeCa_st.Fill(deltaCa_st[0]*(betaS1_0**2)*100)
+        h_rangeCa_st_corrected.Fill(betaS1_0, deltaCa_st[0]*(betaS1_0**2)*100)
+        h_rangeCa_lise_corrected.Fill(betaS1_0, deltaCa_lise[0]*(betaS1_0**2)*100)
+
+        deltaAll_st[0] = rangeBetaS1_correction_factorStraight(betaS1_0, *paramsBetaS1) + rangeAll/(betaS1_0**2)/100
+        h_deltaAll_st.Fill(betaS1_0, deltaAll_st[0])
+        h1D_deltaAll_st.Fill(deltaAll_st[0])
+
+        deltaAll_lise[0] = rangeBetaS1_correction_factorLISE(betaS1_0, *paramsBetaS1) + rangeAll/(betaS1_0**2)/100
+        h_deltaAll_lise.Fill(betaS1_0, deltaAll_lise[0])
+
+        deltaCa_stS1Y[0] = deltaS1Y_correction_factor(S1_Y_0, *paramsDeltaS1Y) + deltaCa_st[0]  
+        deltaAll_stS1Y[0] = deltaS1Y_correction_factor(S1_Y_0, *paramsDeltaS1Y) + deltaAll_st[0]
+        h1D_deltaCa_stS1Y.Fill(deltaCa_stS1Y[0])
+        h1D_deltaAll_stS1Y.Fill(deltaAll_stS1Y[0])
+        h2D_deltaAll_stS1Y_vs_S1Y.Fill(S1_Y_0, deltaAll_stS1Y[0])
+        h2D_deltaAll_stS1Y_vs_betaS1.Fill(betaS1_0, deltaAll_stS1Y[0])
+
+        
+        h1D_rangeAll_st.Fill(deltaAll_st[0]*(betaS1_0**2)*100)
+        h_rangeAll_st_corrected.Fill(betaS1_0, deltaAll_st[0]*(betaS1_0**2)*100)
+        h_rangeAll_lise_corrected.Fill(betaS1_0, deltaAll_lise[0]*(betaS1_0**2)*100)
+
+
+        h_peakS1YCa.Fill(S1_Y_0, peakCa)
+        h_peakS1YAll.Fill(S1_Y_0, peakAll)
+
+        h_peakS1Y_XCa.Fill(S1_X_0, peakS1YCa[0])
+        h_peakS1Y_XAll.Fill(S1_X_0, peakS1YAll[0])
+
+        
+        h_peakS1YCa_deltaCa_st.Fill(peakS1YCa[0], deltaCa_st[0])
+        h_peakS1YXCa_deltaCa_st.Fill(peakS1YXCa[0], deltaCa_st[0])
+        h_peakS1YCa_deltaCa_lise.Fill(peakS1YCa[0], deltaCa_lise[0])
+        h_peakS1YXCa_deltaCa_lise.Fill(peakS1YXCa[0], deltaCa_lise[0])
+
+        h_peakS1YAll_deltaAll_st.Fill(peakS1YAll[0], deltaAll_st[0])
+        h_peakS1YXAll_deltaAll_st.Fill(peakS1YXAll[0], deltaAll_st[0])
+        h_peakS1YAll_deltaAll_lise.Fill(peakS1YAll[0], deltaAll_lise[0])
+        h_peakS1YXAll_deltaAll_lise.Fill(peakS1YXAll[0], deltaAll_lise[0])
+
+        
+        count = count + 1
+
+
+    peakS1YCa_branch.Fill()
+    peakS1YXCa_branch.Fill()
+    peakS1YAll_branch.Fill()
+    peakS1YXAll_branch.Fill()
+    deltaCa_st_branch.Fill()
+    deltaCa_lise_branch.Fill()
+    deltaAll_st_branch.Fill()
+    deltaAll_lise_branch.Fill()
+    deltaCa_stS1Y_branch.Fill()
+    deltaAll_stS1Y_branch.Fill()
+
+
+c1.cd(1)
+h_peakS1YCa.Draw("colz")
+
+c1.cd(2)
+h_peakS1Y_correctedCa.Draw("colz")
+
+c1.cd(3)
+h_peakS1Y_XCa.Draw("colz")
+
+c1.cd(4)
+h_peakS1YX_correctedCa.Draw("colz")
+
+c1.cd(5)
+h_peakS1YAll.Draw("colz")
+
+c1.cd(6)
+h_peakS1Y_correctedAll.Draw("colz")
+
+c1.cd(7)
+h_peakS1Y_XAll.Draw("colz")
+
+c1.cd(8)
+h_peakS1YX_correctedAll.Draw("colz")
+
+c1.cd(9)
+h1D_peakS1YCa.Draw()
+
+c1.cd(10)
+h1D_peakS1YXCa.Draw()
+
+c1.cd(11)
+h1D_peakS1YAll.Draw()
+
+c1.cd(12)
+h1D_peakS1YXAll.Draw()
+
+c1.cd(13)
+h_deltaCa_st.Draw("colz")
+
+c1.cd(14)
+h_deltaAll_st.Draw("colz")
+
+c1.cd(15)
+h1D_deltaCa_st.Draw()
+
+c1.cd(16)
+h1D_rangeAll_st.Draw()
+
+c1.cd(17)
+h1D_deltaCa_stS1Y.Draw()
+
+c1.cd(18)
+h1D_deltaAll_stS1Y.Draw()
+
+c1.cd(19)
+h2D_deltaAll_stS1Y_vs_S1Y.Draw("colz")
+
+c1.cd(20)
+h2D_deltaAll_stS1Y_vs_betaS1.Draw("colz")
+
+
+# c1.cd(9)
+# h_rangeCaBeta2S1.Draw("colz")
+
+c1.Update()
+c1.Draw()
+
+
+
+print(f"Total good events calculated: {count}")
+input("Press Enter to exit...")
+
+# Create a ROOT File for the Canvas and the histograms
+# histFile = ROOT.TFile("/u/ddas/software/work/artemis-oedo/output/Analysis/physOutput/outputRange/rangeCorrection/1053_histFile_2024.root", "RECREATE")
+histFile = ROOT.TFile("/u/ddas/software/work/artemis-oedo/output/Analysis/physOutput/outputRange/rangeCorrection/1052_histFile_2024.root", "RECREATE")
+c1.Write()
+hlist.Write("Histogram List", ROOT.TObject.kSingleKey)
+histFile.Close()
+
+# Save it in the Analysis File
+rootFile.cd()
+tree.Write("", ROOT.TObject.kOverwrite)
+# rootFile.Write("", ROOT.TObject.kOverwrite)
+rootFile.Close()

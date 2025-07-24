@@ -16,27 +16,27 @@ do
 
     echo "Running icChargeCorrection.C..."
     root -l -q "icChargeCorrection.C($RUN_Nbr)"
-    sleep 10
+    sleep 5
 
     echo "Running slowBeamCharge2Energy.C..."
     root -l -q "slowBeamCharge2Energy.C($RUN_Nbr)"
-    sleep 10
+    sleep 5
 
     echo "Running fitSpline.py..."
     python3 fitSpline.py $RUN_Nbr
-    sleep 10
+    sleep 5
 
     echo "Running splineAnaCorrection24.py..."
     python3 splineAnaCorrection24.py $RUN_Nbr
-    sleep 10
+    sleep 5
 
     echo "Running analyzer_spline.C..."
     root -l -q "analyzer_spline.C($RUN_Nbr)"
-    sleep 10
+    sleep 5
 
     echo "Running zetACalSpline.py..."
     python3 zetACalSpline.py $RUN_Nbr
-    sleep 10
+    sleep 5
 
     echo "✅ Finished processing RUN Number: $RUN_Nbr"
     echo ""

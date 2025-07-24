@@ -1,0 +1,6473 @@
+#include <iostream>
+#include <iomanip>
+#include <typeinfo>
+#include <fstream>
+#include <stdio.h>
+
+#define HEIGHT_V 58
+#define HEIGHT_H 94
+#define WIDTH 4
+
+#include "TFile.h"
+#include "TChain.h"
+#include "TTree.h"
+#include "TClonesArray.h"
+#include "TGraph.h"
+#include "TMultiGraph.h"
+#include "TH2.h"
+#include "TH1F.h"
+#include "TH2F.h"
+
+#include "TTimingChargeData.h"
+#include "TTimingChargePositionData.h"
+#include "TCatPulseShape.h"
+#include "ICharge.h"
+#include "TTwoSidedPlasticData.h"
+#include "TPPACData.h"
+#include "TTrack.h"
+#include "TSRPPACPlaneData.h"
+#include "TTimeDifference.h"
+#include "TChargeData.h"
+#include "TTinaData2.h"
+#include "TAffineConverter.h"
+#include "TFixedNumberParameter.h"
+#include "TConverterBase.h"
+#include "TPPACParameter.h"
+#include "TMonotoneTableConverter.h"
+
+using namespace art;
+using namespace std;
+
+// ==================================================================================
+vector<double> scalingFactor = {0.577467478021203, 0.581816361603791, 0.564955317464165,
+								0.562139191789609, 0.561005004269991, 0.561218801267859, 0.567053744111581,
+								0.569979158925311, 0.560227642018658, 0.55741623032533, 0.558140994953815,
+								0.557823129251701, 0.555961278493404, 0.556697353011889, 0.555589846462464,
+								0.554531914566923, 0.556387512959337, 0.551068847585898, 0.556926626884374,
+								0.555737144160237, 0.546561722045824, 0.545918783911169, 0.550806012050982,
+								0.549184647472296, 0.540979901878595, 0.546395536631919, 0.551659412203756,
+								0.542413675610234, 0.54024933472174, 0.530419340460305};
+
+// ==================================================================================
+// Define the constants
+
+double c = 300000000;	// velocity in m/s
+double amu_E = 931.494; // in MeV/u
+
+// Distance
+double distance_F3_FE9 = 68.54307; // distance in meter
+// double distance_FE9_FE12 = 14.87168; // distance in meter
+// double distance_FE9_FE12 = 14.68793; // distance in meter   // Updated distance (2023.05.01)
+// double distance_FE12_S1 = 9.163;	 // distance in meter    // Updated distance (2023.05.01) >> FE12-S0 = 1.350m , S0-S1 = 7.813m
+double distance_FE9_FE12 = 14.87168; // distance in meter   // Carlos used this distance
+double distance_FE12_S1 = 9.4892;	 // distance in meter   // Carlos used this distance
+// ==================================================================================
+
+double calculateBeamEnergy(double TOF, double pathLength)
+{
+	/*
+	Returns kinetic Energy in MeV/u for every event from the TOF information
+	*/
+	double kineticE;
+	if (TOF > 0)
+	{
+		double velocity = (pathLength / TOF) * pow(10, 9);
+		double beta = velocity / c;
+		double gamma = 1 / sqrt(1 - pow(beta, 2));
+		double totalE = gamma * amu_E;
+		kineticE = totalE - amu_E;
+	}
+	else if (TOF <= 0)
+	{
+		kineticE = 0;
+	}
+	return kineticE;
+}
+
+// This is an analyzer of the SHARAQ12 experiment.
+void sharaq12_FastBeam(int a = 0, int b = 100000)
+{
+
+	/***************************
+		  Input Rootfiles
+	  ***************************/
+
+	// The RUN we read..
+	//   TFile *file = new TFile("/home/sh12s24/art_analysis/user/carlos/output/optics/0902/chks1alloptics0902.root");
+	TFile *file = new TFile("/u/ddas/software/work/artemis-oedo/output/optics/0902/chks1alloptics0902.root"); // for lxpool artemis installation
+	TTree *tree = (TTree *)file->Get("tree");
+
+	// List of rootfiles with physics runs.
+	// string RUN_list[107] = {"1003","1005","1006","1007","1008","1009","1014","1016","1017","1018","1019","1020","1021","1022","1023","1024","1025","1026","1027","1028","1029","1030","1031","1032","1033","1034","1035","1036","1037","1038","1039","1040","1042","1049","1050","1051","1052","1053","1054","1055","1056","1062","1064","1065","1066","1067","1068","1069","1070","1071","1072","1073","1074","1076","1077","1078","1079","1080","1081","1082","1083","1084","1085","1086","1087","1088","1089","1090","1091","1092","1093","1094","1096","1097","1098","1099","1100","1101","1102","1103","1104","1105","1106","1107","1108","1109","1110","1111","1112","1113","1114","1115","1116","1117","1118","1119","1120","1121","1124","1125","1126","1127","1128","1129","1130","1131","1132"};
+
+	// We concatenate the trees from the physics runs.
+	// TChain *tree = new TChain("tree");
+	// for (int fn = frun; fn < lrun; fn++)
+	//{
+	//  string rfile = "/home/sh12s24/art_analysis/user/carlos/output/phys/allphys" + RUN_list[fn]  + ".root";
+	//  tree->Add(rfile.c_str());
+	//}
+
+	/***************************
+			   Branches
+	 ***************************/
+
+	// Declaration of TClonesArray pointers for accessing each Root branch required in this analysis.
+	TClonesArray *array_F3_t = new TClonesArray("TTimingChargePositionData"); // Time measured by the diamond at F3.
+
+	TClonesArray *array_FE91_t = new TClonesArray("TTimingChargePositionData");		// Time measured by the first PPAC of FE9.
+	TClonesArray *array_FE92_t = new TClonesArray("TTimingChargePositionData");		// Time measured by the second PPAC at FE9.
+	TClonesArray *array_FE91_x_cal = new TClonesArray("TTimingChargePositionData"); // Horizontal position measured by the first PPAC at FE9
+	TClonesArray *array_FE92_x_cal = new TClonesArray("TTimingChargePositionData"); // Horizontal position measured by the second PPAC at FE9.
+	TClonesArray *array_FE91_y_cal = new TClonesArray("TTimingChargePositionData"); // Vertical position measured by the first PPAC at FE9.
+	TClonesArray *array_FE92_y_cal = new TClonesArray("TTimingChargePositionData"); // Vertical position measured by the second PPAC at FE9.
+
+	TClonesArray *array_FE121_t = new TClonesArray("TTimingChargePositionData");	 // Time measured by the first PPAC at FE12.
+	TClonesArray *array_FE122_t = new TClonesArray("TTimingChargePositionData");	 // Time measured by the second PPAC at FE12.
+	TClonesArray *array_FE121_x_cal = new TClonesArray("TTimingChargePositionData"); // Horizontal position measured by the first PPAC at FE12.
+	TClonesArray *array_FE122_x_cal = new TClonesArray("TTimingChargePositionData"); // Horizontal position measured by the second PPAC at FE12.
+	TClonesArray *array_FE121_y_cal = new TClonesArray("TTimingChargePositionData"); // Vertical position measured by the first PPAC at FE12.
+	TClonesArray *array_FE122_y_cal = new TClonesArray("TTimingChargePositionData"); // Vertical position measured by the second PPAC at FE12.
+
+	TClonesArray *array_S11_t = new TClonesArray("TTimingChargePositionData");	   // Time measured by the first PPAC at S1.
+	TClonesArray *array_S12_t = new TClonesArray("TTimingChargePositionData");	   // Time measured by the second PPAC at S1.
+	TClonesArray *array_S11_x_cal = new TClonesArray("TTimingChargePositionData"); // Horizontal position measured by the first PPAC at S1.
+	TClonesArray *array_S12_x_cal = new TClonesArray("TTimingChargePositionData"); // Horizontal position measured by the second PPAC at S1.
+	TClonesArray *array_S11_y_cal = new TClonesArray("TTimingChargePositionData"); // Vertical position measured by the first PPAC at S1.
+	TClonesArray *array_S12_y_cal = new TClonesArray("TTimingChargePositionData"); // Vertical position measured by the second PPAC at S1.
+
+	TClonesArray *array_IC_RAW_Charge = new TClonesArray("TCatPulseShape"); // RAW Charge provided by the Ionization Chamber at S1.
+	TClonesArray *array_IC_RAW_Energy = new TClonesArray("TCatPulseShape"); // Energy provided by the Ionization Chamber at S1.
+
+	// Declaration of the pointers used for accesing the elements inside each of the TClonesArray above.
+	TTimingChargePositionData *p_F3_t = new TTimingChargePositionData();
+
+	TTimingChargePositionData *p_FE91_t = new TTimingChargePositionData();
+	TTimingChargePositionData *p_FE92_t = new TTimingChargePositionData();
+	TTimingChargePositionData *p_FE91_x_cal = new TTimingChargePositionData();
+	TTimingChargePositionData *p_FE92_x_cal = new TTimingChargePositionData();
+	TTimingChargePositionData *p_FE91_y_cal = new TTimingChargePositionData();
+	TTimingChargePositionData *p_FE92_y_cal = new TTimingChargePositionData();
+
+	TTimingChargePositionData *p_FE121_t = new TTimingChargePositionData();
+	TTimingChargePositionData *p_FE122_t = new TTimingChargePositionData();
+	TTimingChargePositionData *p_FE121_x_cal = new TTimingChargePositionData();
+	TTimingChargePositionData *p_FE122_x_cal = new TTimingChargePositionData();
+	TTimingChargePositionData *p_FE121_y_cal = new TTimingChargePositionData();
+	TTimingChargePositionData *p_FE122_y_cal = new TTimingChargePositionData();
+
+	TTimingChargePositionData *p_S11_t = new TTimingChargePositionData();
+	TTimingChargePositionData *p_S12_t = new TTimingChargePositionData();
+	TTimingChargePositionData *p_S11_x_cal = new TTimingChargePositionData();
+	TTimingChargePositionData *p_S12_x_cal = new TTimingChargePositionData();
+	TTimingChargePositionData *p_S11_y_cal = new TTimingChargePositionData();
+	TTimingChargePositionData *p_S12_y_cal = new TTimingChargePositionData();
+
+	TCatPulseShape *p_IC_RAW = new TCatPulseShape();
+	TCatPulseShape *p_IC = new TCatPulseShape();
+
+	// For optimizing the running time of this analyzer, we only read the branches required for the present analysis.
+	tree->SetBranchStatus("*", 0);
+
+	tree->SetBranchStatus("diapad", 1);
+
+	tree->SetBranchStatus("sr91_a_cal", 1);
+	tree->SetBranchStatus("sr92_a_cal", 1);
+	tree->SetBranchStatus("sr91_x_cal", 1);
+	tree->SetBranchStatus("sr92_x_cal", 1);
+	tree->SetBranchStatus("sr91_y_cal", 1);
+	tree->SetBranchStatus("sr92_y_cal", 1);
+
+	tree->SetBranchStatus("src1_a_cal", 1);
+	tree->SetBranchStatus("src2_a_cal", 1);
+	tree->SetBranchStatus("src1_x_cal", 1);
+	tree->SetBranchStatus("src2_x_cal", 1);
+	tree->SetBranchStatus("src1_y_cal", 1);
+	tree->SetBranchStatus("src2_y_cal", 1);
+
+	// tree->SetBranchStatus("sr11_a_cal",1); //The time information from this anode is not available for the SHARAQ12 experiment.
+	tree->SetBranchStatus("sr12_a_cal", 1);
+	tree->SetBranchStatus("sr11_x_cal", 1);
+	tree->SetBranchStatus("sr12_x_cal", 1);
+	tree->SetBranchStatus("sr11_y_cal", 1);
+	tree->SetBranchStatus("sr12_y_cal", 1);
+
+	tree->SetBranchStatus("icraw", 1);
+	tree->SetBranchStatus("ic", 1);
+
+	// The TClonesArray pointers previously declared are pointed to the corresponding branches in the unpacked data.
+	tree->SetBranchAddress("diapad", &array_F3_t);
+
+	tree->SetBranchAddress("sr91_a_cal", &array_FE91_t);
+	tree->SetBranchAddress("sr92_a_cal", &array_FE92_t);
+	tree->SetBranchAddress("sr91_x_cal", &array_FE91_x_cal);
+	tree->SetBranchAddress("sr92_x_cal", &array_FE92_x_cal);
+	tree->SetBranchAddress("sr91_y_cal", &array_FE91_y_cal);
+	tree->SetBranchAddress("sr92_y_cal", &array_FE92_y_cal);
+
+	tree->SetBranchAddress("src1_a_cal", &array_FE121_t);
+	tree->SetBranchAddress("src2_a_cal", &array_FE122_t);
+	tree->SetBranchAddress("src1_x_cal", &array_FE121_x_cal);
+	tree->SetBranchAddress("src2_x_cal", &array_FE122_x_cal);
+	tree->SetBranchAddress("src1_y_cal", &array_FE121_y_cal);
+	tree->SetBranchAddress("src2_y_cal", &array_FE122_y_cal);
+
+	tree->SetBranchAddress("sr11_a_cal", &array_S11_t);
+	tree->SetBranchAddress("sr12_a_cal", &array_S12_t);
+	tree->SetBranchAddress("sr11_x_cal", &array_S11_x_cal);
+	tree->SetBranchAddress("sr12_x_cal", &array_S12_x_cal);
+	tree->SetBranchAddress("sr11_y_cal", &array_S11_y_cal);
+	tree->SetBranchAddress("sr12_y_cal", &array_S12_y_cal);
+
+	tree->SetBranchAddress("icraw", &array_IC_RAW_Charge);
+	tree->SetBranchAddress("ic", &array_IC_RAW_Energy);
+
+	// All pointers are emptied before starting with the analysis.
+	array_F3_t->Clear();
+
+	array_FE91_t->Clear();
+	array_FE92_t->Clear();
+	array_FE91_x_cal->Clear();
+	array_FE92_x_cal->Clear();
+	array_FE91_y_cal->Clear();
+	array_FE92_y_cal->Clear();
+
+	array_FE121_t->Clear();
+	array_FE122_t->Clear();
+	array_FE121_x_cal->Clear();
+	array_FE122_x_cal->Clear();
+	array_FE121_y_cal->Clear();
+	array_FE122_y_cal->Clear();
+
+	array_S11_t->Clear();
+	array_S12_t->Clear();
+	array_S11_x_cal->Clear();
+	array_S12_x_cal->Clear();
+	array_S11_y_cal->Clear();
+	array_S12_y_cal->Clear();
+
+	array_IC_RAW_Charge->Clear();
+	array_IC_RAW_Energy->Clear();
+
+	p_F3_t->Clear("");
+
+	p_FE91_t->Clear("");
+	p_FE92_t->Clear("");
+	p_FE91_x_cal->Clear("");
+	p_FE92_x_cal->Clear("");
+	p_FE91_y_cal->Clear("");
+	p_FE92_y_cal->Clear("");
+
+	p_FE121_t->Clear("");
+	p_FE122_t->Clear("");
+	p_FE121_x_cal->Clear("");
+	p_FE122_x_cal->Clear("");
+	p_FE121_y_cal->Clear("");
+	p_FE122_y_cal->Clear("");
+
+	p_S11_t->Clear("");
+	p_S12_t->Clear("");
+	p_S11_x_cal->Clear("");
+	p_S12_x_cal->Clear("");
+	p_S11_y_cal->Clear("");
+	p_S12_y_cal->Clear("");
+
+	p_IC_RAW->Clear("");
+	p_IC->Clear("");
+
+	// Histograms used to monitor this analyzer.
+
+	TList *hlist = new TList();
+
+	// TH1F* h_Event = new TH1F("h_Event", "Event", 500000,-0.5,499999.5);
+	// hlist->Add(h_Event);
+
+	TH1F *h_T_FE9A = new TH1F("T_FE9A", "T_FE9A", 100000, -5000, 5000);
+	hlist->Add(h_T_FE9A);
+
+	TH1F *h_T_FE9A_F3 = new TH1F("T_FE9A_F3", "T_FE9A_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_FE9A_F3);
+
+	// TH2F* h_T_FE9A_F3_Event = new TH2F("T_FE9A_F3_Event", "T_FE91X_F3_Event",5000,0,3000000,5000,900,1200);
+	// hlist->Add(h_T_FE91X_F3_Event);
+
+	TH1F *h_T_FE91X_F3 = new TH1F("T_FE91X_F3", "T_FE91X_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_FE91X_F3);
+
+	TH1F *h_T_FE91Y_F3 = new TH1F("T_FE91Y_F3", "T_FE91Y_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_FE91Y_F3);
+
+	TH1F *h_T_FE92X_F3 = new TH1F("T_FE92X_F3", "T_FE92X_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_FE92X_F3);
+
+	TH1F *h_T_FE92Y_F3 = new TH1F("T_FE92Y_F3", "T_FE92Y_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_FE92Y_F3);
+
+	TH1F *h_T_FE12A = new TH1F("T_FE12A", "T_FE12A", 100000, -5000, 5000);
+	hlist->Add(h_T_FE12A);
+
+	TH1F *h_T_FE12A_F3 = new TH1F("T_FE12A_F3", "T_FE12A_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_FE12A_F3);
+
+	TH1F *h_T_FE121X_F3 = new TH1F("T_FE121X_F3", "T_FE121X_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_FE121X_F3);
+
+	TH1F *h_T_FE121Y_F3 = new TH1F("T_FE121Y_F3", "T_FE121Y_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_FE121Y_F3);
+
+	TH1F *h_T_FE122X_F3 = new TH1F("T_FE122X_F3", "T_FE122X_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_FE122X_F3);
+
+	TH1F *h_T_FE122Y_F3 = new TH1F("T_FE122Y_F3", "T_FE122Y_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_FE122Y_F3);
+
+	TH1F *h_T_S1A = new TH1F("T_S1A", "T_S1A", 100000, -5000, 5000);
+	hlist->Add(h_T_S1A);
+
+	TH1F *h_T_S1A_F3 = new TH1F("T_S1A_F3", "T_S1A_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_S1A_F3);
+
+	TH1F *h_T_S11X_F3 = new TH1F("T_S11X_F3", "T_S11X_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_S11X_F3);
+
+	TH1F *h_T_S11Y_F3 = new TH1F("T_S11Y_F3", "T_S11Y_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_S11Y_F3);
+
+	TH1F *h_T_S12X_F3 = new TH1F("T_S12X_F3", "T_S12X_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_S12X_F3);
+
+	TH1F *h_T_S12Y_F3 = new TH1F("T_S12Y_F3", "T_S12Y_F3", 100000, -5000, 5000);
+	hlist->Add(h_T_S12Y_F3);
+
+	TH2F *h_FE91_X_Q0_C2[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_FE91_X_Q0_C2[i] = new TH2F(Form("FE91_X_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_FE91_X_Q0_C2[i]);
+	}
+
+	TH2F *h_FE91_Y_Q0_C2[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_FE91_Y_Q0_C2[i] = new TH2F(Form("FE91_Y_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_FE91_Y_Q0_C2[i]);
+	}
+
+	TH2F *h_FE92_X_Q0_C2[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_FE92_X_Q0_C2[i] = new TH2F(Form("FE92_X_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_FE92_X_Q0_C2[i]);
+	}
+
+	TH2F *h_FE92_Y_Q0_C2[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_FE92_Y_Q0_C2[i] = new TH2F(Form("FE92_Y_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_FE92_Y_Q0_C2[i]);
+	}
+
+	TH2F *h_FE121_X_Q0_C2[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_FE121_X_Q0_C2[i] = new TH2F(Form("FE121_X_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_FE121_X_Q0_C2[i]);
+	}
+
+	TH2F *h_FE121_Y_Q0_C2[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_FE121_Y_Q0_C2[i] = new TH2F(Form("FE121_Y_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_FE121_Y_Q0_C2[i]);
+	}
+
+	TH2F *h_FE122_X_Q0_C2[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_FE122_X_Q0_C2[i] = new TH2F(Form("FE122_X_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_FE122_X_Q0_C2[i]);
+	}
+
+	TH2F *h_FE122_Y_Q0_C2[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_FE122_Y_Q0_C2[i] = new TH2F(Form("FE122_Y_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_FE122_Y_Q0_C2[i]);
+	}
+
+	TH2F *h_S11_X_Q0_C2[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_S11_X_Q0_C2[i] = new TH2F(Form("S11_X_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_S11_X_Q0_C2[i]);
+	}
+
+	TH2F *h_S11_Y_Q0_C2[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_S11_Y_Q0_C2[i] = new TH2F(Form("S11_Y_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_S11_Y_Q0_C2[i]);
+	}
+
+	TH2F *h_S12_X_Q0_C2[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_S12_X_Q0_C2[i] = new TH2F(Form("S12_X_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_S12_X_Q0_C2[i]);
+	}
+
+	TH2F *h_S12_Y_Q0_C2[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_S12_Y_Q0_C2[i] = new TH2F(Form("S12_Y_Q0_C2_%d", i + 1), Form("Q0 (C2) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_S12_Y_Q0_C2[i]);
+	}
+
+	TH2F *h_FE91_X_Q0_C[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_FE91_X_Q0_C[i] = new TH2F(Form("FE91_X_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_FE91_X_Q0_C[i]);
+	}
+
+	TH2F *h_FE91_Y_Q0_C[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_FE91_Y_Q0_C[i] = new TH2F(Form("FE91_Y_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_FE91_Y_Q0_C[i]);
+	}
+
+	TH2F *h_FE92_X_Q0_C[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_FE92_X_Q0_C[i] = new TH2F(Form("FE92_X_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_FE92_X_Q0_C[i]);
+	}
+
+	TH2F *h_FE92_Y_Q0_C[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_FE92_Y_Q0_C[i] = new TH2F(Form("FE92_Y_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_FE92_Y_Q0_C[i]);
+	}
+
+	TH2F *h_FE121_X_Q0_C[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_FE121_X_Q0_C[i] = new TH2F(Form("FE121_X_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_FE121_X_Q0_C[i]);
+	}
+
+	TH2F *h_FE121_Y_Q0_C[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_FE121_Y_Q0_C[i] = new TH2F(Form("FE121_Y_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_FE121_Y_Q0_C[i]);
+	}
+
+	TH2F *h_FE122_X_Q0_C[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_FE122_X_Q0_C[i] = new TH2F(Form("FE122_X_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_FE122_X_Q0_C[i]);
+	}
+
+	TH2F *h_FE122_Y_Q0_C[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_FE122_Y_Q0_C[i] = new TH2F(Form("FE122_Y_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_FE122_Y_Q0_C[i]);
+	}
+
+	TH2F *h_S11_X_Q0_C[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_S11_X_Q0_C[i] = new TH2F(Form("S11_X_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_S11_X_Q0_C[i]);
+	}
+
+	TH2F *h_S11_Y_Q0_C[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_S11_Y_Q0_C[i] = new TH2F(Form("S11_Y_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_S11_Y_Q0_C[i]);
+	}
+
+	TH2F *h_S12_X_Q0_C[15];
+	for (int i = 0; i < 15; i++)
+	{
+		h_S12_X_Q0_C[i] = new TH2F(Form("S12_X_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 94, -0.5, 93.5, 5000, 0, 100);
+		hlist->Add(h_S12_X_Q0_C[i]);
+	}
+
+	TH2F *h_S12_Y_Q0_C[16];
+	for (int i = 0; i < 16; i++)
+	{
+		h_S12_Y_Q0_C[i] = new TH2F(Form("S12_Y_Q0_C_%d", i + 1), Form("Q0 (C) vs Strip ID (%d)", i), 58, -0.5, 57.5, 5000, 0, 100);
+		hlist->Add(h_S12_Y_Q0_C[i]);
+	}
+
+	TH2F *h_FE91_X_Q0 = new TH2F("FE91_X_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_Q0);
+
+	TH2F *h_FE91_X_C_Q0 = new TH2F("FE91_X_C_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C_Q0);
+
+	TH2F *h_FE91_X_C2_Q0 = new TH2F("FE91_X_C2_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C2_Q0);
+
+	TH2F *h_FE91_Y_Q0 = new TH2F("FE91_Y_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_Q0);
+
+	TH2F *h_FE91_Y_C_Q0 = new TH2F("FE91_Y_C_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C_Q0);
+
+	TH2F *h_FE91_Y_C2_Q0 = new TH2F("FE91_Y_C2_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C2_Q0);
+
+	TH2F *h_FE91_X_Q1 = new TH2F("FE91_X_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_Q1);
+
+	TH2F *h_FE91_X_C_Q1 = new TH2F("FE91_X_C_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C_Q1);
+
+	TH2F *h_FE91_X_C2_Q1 = new TH2F("FE91_X_C2_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C2_Q1);
+
+	TH2F *h_FE91_Y_Q1 = new TH2F("FE91_Y_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_Q1);
+
+	TH2F *h_FE91_Y_C_Q1 = new TH2F("FE91_Y_C_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C_Q1);
+
+	TH2F *h_FE91_Y_C2_Q1 = new TH2F("FE91_Y_C2_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C2_Q1);
+
+	TH2F *h_FE91_X_Q2 = new TH2F("FE91_X_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_Q2);
+
+	TH2F *h_FE91_X_C_Q2 = new TH2F("FE91_X_C_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C_Q2);
+
+	TH2F *h_FE91_X_C2_Q2 = new TH2F("FE91_X_C2_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C2_Q2);
+
+	TH2F *h_FE91_Y_Q2 = new TH2F("FE91_Y_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_Q2);
+
+	TH2F *h_FE91_Y_C_Q2 = new TH2F("FE91_Y_C_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C_Q2);
+
+	TH2F *h_FE91_Y_C2_Q2 = new TH2F("FE91_Y_C2_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C2_Q2);
+
+	TH2F *h_FE91_X_Q3 = new TH2F("FE91_X_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_Q3);
+
+	TH2F *h_FE91_X_C_Q3 = new TH2F("FE91_X_C_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C_Q3);
+
+	TH2F *h_FE91_X_C2_Q3 = new TH2F("FE91_X_C2_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C2_Q3);
+
+	TH2F *h_FE91_Y_Q3 = new TH2F("FE91_Y_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_Q3);
+
+	TH2F *h_FE91_Y_C_Q3 = new TH2F("FE91_Y_C_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C_Q3);
+
+	TH2F *h_FE91_Y_C2_Q3 = new TH2F("FE91_Y_C2_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C2_Q3);
+
+	TH2F *h_FE91_X_Q4 = new TH2F("FE91_X_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_Q4);
+
+	TH2F *h_FE91_X_C_Q4 = new TH2F("FE91_X_C_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C_Q4);
+
+	TH2F *h_FE91_X_C2_Q4 = new TH2F("FE91_X_C2_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C2_Q4);
+
+	TH2F *h_FE91_Y_Q4 = new TH2F("FE91_Y_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_Q4);
+
+	TH2F *h_FE91_Y_C_Q4 = new TH2F("FE91_Y_C_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C_Q4);
+
+	TH2F *h_FE91_Y_C2_Q4 = new TH2F("FE91_Y_C2_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C2_Q4);
+
+	TH2F *h_FE91_X_Q5 = new TH2F("FE91_X_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_Q5);
+
+	TH2F *h_FE91_X_C_Q5 = new TH2F("FE91_X_C_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C_Q5);
+
+	TH2F *h_FE91_X_C2_Q5 = new TH2F("FE91_X_C2_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE91_X_C2_Q5);
+
+	TH2F *h_FE91_Y_Q5 = new TH2F("FE91_Y_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_Q5);
+
+	TH2F *h_FE91_Y_C_Q5 = new TH2F("FE91_Y_C_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C_Q5);
+
+	TH2F *h_FE91_Y_C2_Q5 = new TH2F("FE91_Y_C2_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE91_Y_C2_Q5);
+
+	TH2F *h_FE92_X_Q0 = new TH2F("FE92_X_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_Q0);
+
+	TH2F *h_FE92_X_C_Q0 = new TH2F("FE92_X_C_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C_Q0);
+
+	TH2F *h_FE92_X_C2_Q0 = new TH2F("FE92_X_C2_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C2_Q0);
+
+	TH2F *h_FE92_Y_Q0 = new TH2F("FE92_Y_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_Q0);
+
+	TH2F *h_FE92_Y_C_Q0 = new TH2F("FE92_Y_C_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C_Q0);
+
+	TH2F *h_FE92_Y_C2_Q0 = new TH2F("FE92_Y_C2_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C2_Q0);
+
+	TH2F *h_FE92_X_Q1 = new TH2F("FE92_X_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_Q1);
+
+	TH2F *h_FE92_X_C_Q1 = new TH2F("FE92_X_C_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C_Q1);
+
+	TH2F *h_FE92_X_C2_Q1 = new TH2F("FE92_X_C2_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C2_Q1);
+
+	TH2F *h_FE92_Y_Q1 = new TH2F("FE92_Y_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_Q1);
+
+	TH2F *h_FE92_Y_C_Q1 = new TH2F("FE92_Y_C_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C_Q1);
+
+	TH2F *h_FE92_Y_C2_Q1 = new TH2F("FE92_Y_C2_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C2_Q1);
+
+	TH2F *h_FE92_X_Q2 = new TH2F("FE92_X_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_Q2);
+
+	TH2F *h_FE92_X_C_Q2 = new TH2F("FE92_X_C_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C_Q2);
+
+	TH2F *h_FE92_X_C2_Q2 = new TH2F("FE92_X_C2_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C2_Q2);
+
+	TH2F *h_FE92_Y_Q2 = new TH2F("FE92_Y_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_Q2);
+
+	TH2F *h_FE92_Y_C_Q2 = new TH2F("FE92_Y_C_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C_Q2);
+
+	TH2F *h_FE92_Y_C2_Q2 = new TH2F("FE92_Y_C2_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C2_Q2);
+
+	TH2F *h_FE92_X_Q3 = new TH2F("FE92_X_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_Q3);
+
+	TH2F *h_FE92_X_C_Q3 = new TH2F("FE92_X_C_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C_Q3);
+
+	TH2F *h_FE92_X_C2_Q3 = new TH2F("FE92_X_C2_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C2_Q3);
+
+	TH2F *h_FE92_Y_Q3 = new TH2F("FE92_Y_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_Q3);
+
+	TH2F *h_FE92_Y_C_Q3 = new TH2F("FE92_Y_C_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C_Q3);
+
+	TH2F *h_FE92_Y_C2_Q3 = new TH2F("FE92_Y_C2_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C2_Q3);
+
+	TH2F *h_FE92_X_Q4 = new TH2F("FE92_X_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_Q4);
+
+	TH2F *h_FE92_X_C_Q4 = new TH2F("FE92_X_C_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C_Q4);
+
+	TH2F *h_FE92_X_C2_Q4 = new TH2F("FE92_X_C2_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C2_Q4);
+
+	TH2F *h_FE92_Y_Q4 = new TH2F("FE92_Y_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_Q4);
+
+	TH2F *h_FE92_Y_C_Q4 = new TH2F("FE92_Y_C_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C_Q4);
+
+	TH2F *h_FE92_Y_C2_Q4 = new TH2F("FE92_Y_C2_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C2_Q4);
+
+	TH2F *h_FE92_X_Q5 = new TH2F("FE92_X_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_Q5);
+
+	TH2F *h_FE92_X_C_Q5 = new TH2F("FE92_X_C_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C_Q5);
+
+	TH2F *h_FE92_X_C2_Q5 = new TH2F("FE92_X_C2_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE92_X_C2_Q5);
+
+	TH2F *h_FE92_Y_Q5 = new TH2F("FE92_Y_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_Q5);
+
+	TH2F *h_FE92_Y_C_Q5 = new TH2F("FE92_Y_C_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C_Q5);
+
+	TH2F *h_FE92_Y_C2_Q5 = new TH2F("FE92_Y_C2_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE92_Y_C2_Q5);
+
+	TH2F *h_FE121_X_Q0 = new TH2F("FE121_X_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_Q0);
+
+	TH2F *h_FE121_X_C_Q0 = new TH2F("FE121_X_C_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C_Q0);
+
+	TH2F *h_FE121_X_C2_Q0 = new TH2F("FE121_X_C2_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C2_Q0);
+
+	TH2F *h_FE121_Y_Q0 = new TH2F("FE121_Y_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_Q0);
+
+	TH2F *h_FE121_Y_C_Q0 = new TH2F("FE121_Y_C_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C_Q0);
+
+	TH2F *h_FE121_Y_C2_Q0 = new TH2F("FE121_Y_C2_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C2_Q0);
+
+	TH2F *h_FE121_X_Q1 = new TH2F("FE121_X_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_Q1);
+
+	TH2F *h_FE121_X_C_Q1 = new TH2F("FE121_X_C_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C_Q1);
+
+	TH2F *h_FE121_X_C2_Q1 = new TH2F("FE121_X_C2_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C2_Q1);
+
+	TH2F *h_FE121_Y_Q1 = new TH2F("FE121_Y_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_Q1);
+
+	TH2F *h_FE121_Y_C_Q1 = new TH2F("FE121_Y_C_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C_Q1);
+
+	TH2F *h_FE121_Y_C2_Q1 = new TH2F("FE121_Y_C2_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C2_Q1);
+
+	TH2F *h_FE121_X_Q2 = new TH2F("FE121_X_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_Q2);
+
+	TH2F *h_FE121_X_C_Q2 = new TH2F("FE121_X_C_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C_Q2);
+
+	TH2F *h_FE121_X_C2_Q2 = new TH2F("FE121_X_C2_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C2_Q2);
+
+	TH2F *h_FE121_Y_Q2 = new TH2F("FE121_Y_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_Q2);
+
+	TH2F *h_FE121_Y_C_Q2 = new TH2F("FE121_Y_C_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C_Q2);
+
+	TH2F *h_FE121_Y_C2_Q2 = new TH2F("FE121_Y_C2_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C2_Q2);
+
+	TH2F *h_FE121_X_Q3 = new TH2F("FE121_X_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_Q3);
+
+	TH2F *h_FE121_X_C_Q3 = new TH2F("FE121_X_C_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C_Q3);
+
+	TH2F *h_FE121_X_C2_Q3 = new TH2F("FE121_X_C2_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C2_Q3);
+
+	TH2F *h_FE121_Y_Q3 = new TH2F("FE121_Y_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_Q3);
+
+	TH2F *h_FE121_Y_C_Q3 = new TH2F("FE121_Y_C_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C_Q3);
+
+	TH2F *h_FE121_Y_C2_Q3 = new TH2F("FE121_Y_C2_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C2_Q3);
+
+	TH2F *h_FE121_X_Q4 = new TH2F("FE121_X_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_Q4);
+
+	TH2F *h_FE121_X_C_Q4 = new TH2F("FE121_X_C_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C_Q4);
+
+	TH2F *h_FE121_X_C2_Q4 = new TH2F("FE121_X_C2_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C2_Q4);
+
+	TH2F *h_FE121_Y_Q4 = new TH2F("FE121_Y_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_Q4);
+
+	TH2F *h_FE121_Y_C_Q4 = new TH2F("FE121_Y_C_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C_Q4);
+
+	TH2F *h_FE121_Y_C2_Q4 = new TH2F("FE121_Y_C2_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C2_Q4);
+
+	TH2F *h_FE121_X_Q5 = new TH2F("FE121_X_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_Q5);
+
+	TH2F *h_FE121_X_C_Q5 = new TH2F("FE121_X_C_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C_Q5);
+
+	TH2F *h_FE121_X_C2_Q5 = new TH2F("FE121_X_C2_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE121_X_C2_Q5);
+
+	TH2F *h_FE121_Y_Q5 = new TH2F("FE121_Y_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_Q5);
+
+	TH2F *h_FE121_Y_C_Q5 = new TH2F("FE121_Y_C_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C_Q5);
+
+	TH2F *h_FE121_Y_C2_Q5 = new TH2F("FE121_Y_C2_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE121_Y_C2_Q5);
+
+	TH2F *h_FE122_X_Q0 = new TH2F("FE122_X_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_Q0);
+
+	TH2F *h_FE122_X_C_Q0 = new TH2F("FE122_X_C_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C_Q0);
+
+	TH2F *h_FE122_X_C2_Q0 = new TH2F("FE122_X_C2_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C2_Q0);
+
+	TH2F *h_FE122_Y_Q0 = new TH2F("FE122_Y_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_Q0);
+
+	TH2F *h_FE122_Y_C_Q0 = new TH2F("FE122_Y_C_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C_Q0);
+
+	TH2F *h_FE122_Y_C2_Q0 = new TH2F("FE122_Y_C2_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C2_Q0);
+
+	TH2F *h_FE122_X_Q1 = new TH2F("FE122_X_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_Q1);
+
+	TH2F *h_FE122_X_C_Q1 = new TH2F("FE122_X_C_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C_Q1);
+
+	TH2F *h_FE122_X_C2_Q1 = new TH2F("FE122_X_C2_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C2_Q1);
+
+	TH2F *h_FE122_Y_Q1 = new TH2F("FE122_Y_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_Q1);
+
+	TH2F *h_FE122_Y_C_Q1 = new TH2F("FE122_Y_C_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C_Q1);
+
+	TH2F *h_FE122_Y_C2_Q1 = new TH2F("FE122_Y_C2_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C2_Q1);
+
+	TH2F *h_FE122_X_Q2 = new TH2F("FE122_X_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_Q2);
+
+	TH2F *h_FE122_X_C_Q2 = new TH2F("FE122_X_C_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C_Q2);
+
+	TH2F *h_FE122_X_C2_Q2 = new TH2F("FE122_X_C2_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C2_Q2);
+
+	TH2F *h_FE122_Y_Q2 = new TH2F("FE122_Y_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_Q2);
+
+	TH2F *h_FE122_Y_C_Q2 = new TH2F("FE122_Y_C_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C_Q2);
+
+	TH2F *h_FE122_Y_C2_Q2 = new TH2F("FE122_Y_C2_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C2_Q2);
+
+	TH2F *h_FE122_X_Q3 = new TH2F("FE122_X_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_Q3);
+
+	TH2F *h_FE122_X_C_Q3 = new TH2F("FE122_X_C_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C_Q3);
+
+	TH2F *h_FE122_X_C2_Q3 = new TH2F("FE122_X_C2_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C2_Q3);
+
+	TH2F *h_FE122_Y_Q3 = new TH2F("FE122_Y_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_Q3);
+
+	TH2F *h_FE122_Y_C_Q3 = new TH2F("FE122_Y_C_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C_Q3);
+
+	TH2F *h_FE122_Y_C2_Q3 = new TH2F("FE122_Y_C2_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C2_Q3);
+
+	TH2F *h_FE122_X_Q4 = new TH2F("FE122_X_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_Q4);
+
+	TH2F *h_FE122_X_C_Q4 = new TH2F("FE122_X_C_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C_Q4);
+
+	TH2F *h_FE122_X_C2_Q4 = new TH2F("FE122_X_C2_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C2_Q4);
+
+	TH2F *h_FE122_Y_Q4 = new TH2F("FE122_Y_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_Q4);
+
+	TH2F *h_FE122_Y_C_Q4 = new TH2F("FE122_Y_C_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C_Q4);
+
+	TH2F *h_FE122_Y_C2_Q4 = new TH2F("FE122_Y_C2_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C2_Q4);
+
+	TH2F *h_FE122_X_Q5 = new TH2F("FE122_X_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_Q5);
+
+	TH2F *h_FE122_X_C_Q5 = new TH2F("FE122_X_C_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C_Q5);
+
+	TH2F *h_FE122_X_C2_Q5 = new TH2F("FE122_X_C2_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_FE122_X_C2_Q5);
+
+	TH2F *h_FE122_Y_Q5 = new TH2F("FE122_Y_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_Q5);
+
+	TH2F *h_FE122_Y_C_Q5 = new TH2F("FE122_Y_C_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C_Q5);
+
+	TH2F *h_FE122_Y_C2_Q5 = new TH2F("FE122_Y_C2_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_FE122_Y_C2_Q5);
+
+	TH2F *h_S11_X_Q0 = new TH2F("S11_X_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_Q0);
+
+	TH2F *h_S11_X_C_Q0 = new TH2F("S11_X_C_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C_Q0);
+
+	TH2F *h_S11_X_C2_Q0 = new TH2F("S11_X_C2_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C2_Q0);
+
+	TH2F *h_S11_Y_Q0 = new TH2F("S11_Y_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_Q0);
+
+	TH2F *h_S11_Y_C_Q0 = new TH2F("S11_Y_C_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C_Q0);
+
+	TH2F *h_S11_Y_C2_Q0 = new TH2F("S11_Y_C2_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C2_Q0);
+
+	TH2F *h_S11_X_Q1 = new TH2F("S11_X_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_Q1);
+
+	TH2F *h_S11_X_C_Q1 = new TH2F("S11_X_C_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C_Q1);
+
+	TH2F *h_S11_X_C2_Q1 = new TH2F("S11_X_C2_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C2_Q1);
+
+	TH2F *h_S11_Y_Q1 = new TH2F("S11_Y_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_Q1);
+
+	TH2F *h_S11_Y_C_Q1 = new TH2F("S11_Y_C_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C_Q1);
+
+	TH2F *h_S11_Y_C2_Q1 = new TH2F("S11_Y_C2_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C2_Q1);
+
+	TH2F *h_S11_X_Q2 = new TH2F("S11_X_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_Q2);
+
+	TH2F *h_S11_X_C_Q2 = new TH2F("S11_X_C_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C_Q2);
+
+	TH2F *h_S11_X_C2_Q2 = new TH2F("S11_X_C2_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C2_Q2);
+
+	TH2F *h_S11_Y_Q2 = new TH2F("S11_Y_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_Q2);
+
+	TH2F *h_S11_Y_C_Q2 = new TH2F("S11_Y_C_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C_Q2);
+
+	TH2F *h_S11_Y_C2_Q2 = new TH2F("S11_Y_C2_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C2_Q2);
+
+	TH2F *h_S11_X_Q3 = new TH2F("S11_X_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_Q3);
+
+	TH2F *h_S11_X_C_Q3 = new TH2F("S11_X_C_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C_Q3);
+
+	TH2F *h_S11_X_C2_Q3 = new TH2F("S11_X_C2_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C2_Q3);
+
+	TH2F *h_S11_Y_Q3 = new TH2F("S11_Y_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_Q3);
+
+	TH2F *h_S11_Y_C_Q3 = new TH2F("S11_Y_C_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C_Q3);
+
+	TH2F *h_S11_Y_C2_Q3 = new TH2F("S11_Y_C2_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C2_Q3);
+
+	TH2F *h_S11_X_Q4 = new TH2F("S11_X_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_Q4);
+
+	TH2F *h_S11_X_C_Q4 = new TH2F("S11_X_C_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C_Q4);
+
+	TH2F *h_S11_X_C2_Q4 = new TH2F("S11_X_C2_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C2_Q4);
+
+	TH2F *h_S11_Y_Q4 = new TH2F("S11_Y_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_Q4);
+
+	TH2F *h_S11_Y_C_Q4 = new TH2F("S11_Y_C_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C_Q4);
+
+	TH2F *h_S11_Y_C2_Q4 = new TH2F("S11_Y_C2_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C2_Q4);
+
+	TH2F *h_S11_X_Q5 = new TH2F("S11_X_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_Q5);
+
+	TH2F *h_S11_X_C_Q5 = new TH2F("S11_X_C_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C_Q5);
+
+	TH2F *h_S11_X_C2_Q5 = new TH2F("S11_X_C2_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S11_X_C2_Q5);
+
+	TH2F *h_S11_Y_Q5 = new TH2F("S11_Y_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_Q5);
+
+	TH2F *h_S11_Y_C_Q5 = new TH2F("S11_Y_C_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C_Q5);
+
+	TH2F *h_S11_Y_C2_Q5 = new TH2F("S11_Y_C2_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S11_Y_C2_Q5);
+
+	TH2F *h_S12_X_Q0 = new TH2F("S12_X_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_Q0);
+
+	TH2F *h_S12_X_C_Q0 = new TH2F("S12_X_C_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C_Q0);
+
+	TH2F *h_S12_X_C2_Q0 = new TH2F("S12_X_C2_Q0", "Q0 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C2_Q0);
+
+	TH2F *h_S12_Y_Q0 = new TH2F("S12_Y_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_Q0);
+
+	TH2F *h_S12_Y_C_Q0 = new TH2F("S12_Y_C_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C_Q0);
+
+	TH2F *h_S12_Y_C2_Q0 = new TH2F("S12_Y_C2_Q0", "Q0 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C2_Q0);
+
+	TH2F *h_S12_X_Q1 = new TH2F("S12_X_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_Q1);
+
+	TH2F *h_S12_X_C_Q1 = new TH2F("S12_X_C_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C_Q1);
+
+	TH2F *h_S12_X_C2_Q1 = new TH2F("S12_X_C2_Q1", "Q1 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C2_Q1);
+
+	TH2F *h_S12_Y_Q1 = new TH2F("S12_Y_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_Q1);
+
+	TH2F *h_S12_Y_C_Q1 = new TH2F("S12_Y_C_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C_Q1);
+
+	TH2F *h_S12_Y_C2_Q1 = new TH2F("S12_Y_C2_Q1", "Q1 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C2_Q1);
+
+	TH2F *h_S12_X_Q2 = new TH2F("S12_X_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_Q2);
+
+	TH2F *h_S12_X_C_Q2 = new TH2F("S12_X_C_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C_Q2);
+
+	TH2F *h_S12_X_C2_Q2 = new TH2F("S12_X_C2_Q2", "Q2 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C2_Q2);
+
+	TH2F *h_S12_Y_Q2 = new TH2F("S12_Y_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_Q2);
+
+	TH2F *h_S12_Y_C_Q2 = new TH2F("S12_Y_C_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C_Q2);
+
+	TH2F *h_S12_Y_C2_Q2 = new TH2F("S12_Y_C2_Q2", "Q2 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C2_Q2);
+
+	TH2F *h_S12_X_Q3 = new TH2F("S12_X_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_Q3);
+
+	TH2F *h_S12_X_C_Q3 = new TH2F("S12_X_C_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C_Q3);
+
+	TH2F *h_S12_X_C2_Q3 = new TH2F("S12_X_C2_Q3", "Q3 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C2_Q3);
+
+	TH2F *h_S12_Y_Q3 = new TH2F("S12_Y_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_Q3);
+
+	TH2F *h_S12_Y_C_Q3 = new TH2F("S12_Y_C_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C_Q3);
+
+	TH2F *h_S12_Y_C2_Q3 = new TH2F("S12_Y_C2_Q3", "Q3 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C2_Q3);
+
+	TH2F *h_S12_X_Q4 = new TH2F("S12_X_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_Q4);
+
+	TH2F *h_S12_X_C_Q4 = new TH2F("S12_X_C_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C_Q4);
+
+	TH2F *h_S12_X_C2_Q4 = new TH2F("S12_X_C2_Q4", "Q4 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C2_Q4);
+
+	TH2F *h_S12_Y_Q4 = new TH2F("S12_Y_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_Q4);
+
+	TH2F *h_S12_Y_C_Q4 = new TH2F("S12_Y_C_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C_Q4);
+
+	TH2F *h_S12_Y_C2_Q4 = new TH2F("S12_Y_C2_Q4", "Q4 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C2_Q4);
+
+	TH2F *h_S12_X_Q5 = new TH2F("S12_X_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_Q5);
+
+	TH2F *h_S12_X_C_Q5 = new TH2F("S12_X_C_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C_Q5);
+
+	TH2F *h_S12_X_C2_Q5 = new TH2F("S12_X_C2_Q5", "Q5 vs Strip ID", 94, -0.5, 93.5, 5000, 0, 100);
+	hlist->Add(h_S12_X_C2_Q5);
+
+	TH2F *h_S12_Y_Q5 = new TH2F("S12_Y_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_Q5);
+
+	TH2F *h_S12_Y_C_Q5 = new TH2F("S12_Y_C_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C_Q5);
+
+	TH2F *h_S12_Y_C2_Q5 = new TH2F("S12_Y_C2_Q5", "Q5 vs Strip ID", 58, -0.5, 57.5, 5000, 0, 100);
+	hlist->Add(h_S12_Y_C2_Q5);
+
+	TH1F *h_FE91_X = new TH1F("FE91_X", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE91_X);
+
+	TH1F *h_FE91_X_C = new TH1F("FE91_X_C", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE91_X_C);
+
+	TH1F *h_FE91_X_C2 = new TH1F("FE91_X_C2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE91_X_C2);
+
+	TH1F *h_FE91_X_M = new TH1F("FE91_X_M", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE91_X_M);
+
+	TH1F *h_FE91_X_M2 = new TH1F("FE91_X_M2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE91_X_M2);
+
+	TH1F *h_FE92_X = new TH1F("FE92_X", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE92_X);
+
+	TH1F *h_FE92_X_C = new TH1F("FE92_X_C", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE92_X_C);
+
+	TH1F *h_FE92_X_C2 = new TH1F("FE92_X_C2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE92_X_C2);
+
+	TH1F *h_FE92_X_M = new TH1F("FE92_X_M", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE92_X_M);
+
+	TH1F *h_FE92_X_M2 = new TH1F("FE92_X_M2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE92_X_M2);
+
+	TH1F *h_FE9_X = new TH1F("FE9_X", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE9_X);
+
+	TH1F *h_FE9_X_C = new TH1F("FE9_X_C", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE9_X_C);
+
+	TH1F *h_FE9_X_C2 = new TH1F("FE9_X_C2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE9_X_C2);
+
+	TH1F *h_FE9_X_M = new TH1F("FE9_X_M", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE9_X_M);
+
+	TH1F *h_FE9_X_M2 = new TH1F("FE9_X_M2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE9_X_M2);
+
+	TH1F *h_FE9_A = new TH1F("FE9_A", "S0 Horizontal Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE9_A);
+
+	TH1F *h_FE9_A_C = new TH1F("FE9_A_C", "S0 Horizontal Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE9_A_C);
+
+	TH1F *h_FE9_A_C2 = new TH1F("FE9_A_C2", "S0 Horizontal Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE9_A_C2);
+
+	TH1F *h_FE9_A_M = new TH1F("FE9_A_M", "S0 Horizontal Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE9_A_M);
+
+	TH1F *h_FE9_A_M2 = new TH1F("FE9_A_M2", "S0 Horizontal Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE9_A_M2);
+
+	TH1F *h_FE91_Y = new TH1F("FE91_Y", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE91_Y);
+
+	TH1F *h_FE91_Y_C = new TH1F("FE91_Y_C", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE91_Y_C);
+
+	TH1F *h_FE91_Y_C2 = new TH1F("FE91_Y_C2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE91_Y_C2);
+
+	TH1F *h_FE91_Y_M = new TH1F("FE91_Y_M", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE91_Y_M);
+
+	TH1F *h_FE91_Y_M2 = new TH1F("FE91_Y_M2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE91_Y_M2);
+
+	TH1F *h_FE92_Y = new TH1F("FE92_Y", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE92_Y);
+
+	TH1F *h_FE92_Y_C = new TH1F("FE92_Y_C", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE92_Y_C);
+
+	TH1F *h_FE92_Y_C2 = new TH1F("FE92_Y_C2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE92_Y_C2);
+
+	TH1F *h_FE92_Y_M = new TH1F("FE92_Y_M", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE92_Y_M);
+
+	TH1F *h_FE92_Y_M2 = new TH1F("FE92_Y_M2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE92_Y_M2);
+
+	TH1F *h_FE9_Y = new TH1F("FE9_Y", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE9_Y);
+
+	TH1F *h_FE9_Y_C = new TH1F("FE9_Y_C", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE9_Y_C);
+
+	TH1F *h_FE9_Y_C2 = new TH1F("FE9_Y_C2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE9_Y_C2);
+
+	TH1F *h_FE9_Y_M = new TH1F("FE9_Y_M", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE9_Y_M);
+
+	TH1F *h_FE9_Y_M2 = new TH1F("FE9_Y_M2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE9_Y_M2);
+
+	TH1F *h_FE9_B = new TH1F("FE9_B", "S0 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE9_B);
+
+	TH1F *h_FE9_B_C = new TH1F("FE9_B_C", "S0 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE9_B_C);
+
+	TH1F *h_FE9_B_C2 = new TH1F("FE9_B_C2", "S0 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE9_B_C2);
+
+	TH1F *h_FE9_B_M = new TH1F("FE9_B_M", "S0 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE9_B_M);
+
+	TH1F *h_FE9_B_M2 = new TH1F("FE9_B_M2", "S0 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE9_B_M2);
+
+	TH1F *h_FE121_X = new TH1F("FE121_X", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE121_X);
+
+	TH1F *h_FE121_X_C = new TH1F("FE121_X_C", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE121_X_C);
+
+	TH1F *h_FE121_X_C2 = new TH1F("FE121_X_C2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE121_X_C2);
+
+	TH1F *h_FE121_X_M = new TH1F("FE121_X_M", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE121_X_M);
+
+	TH1F *h_FE121_X_M2 = new TH1F("FE121_X_M2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE121_X_M2);
+
+	TH1F *h_FE122_X = new TH1F("FE122_X", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE122_X);
+
+	TH1F *h_FE122_X_C = new TH1F("FE122_X_C", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE122_X_C);
+
+	TH1F *h_FE122_X_C2 = new TH1F("FE122_X_C2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE122_X_C2);
+
+	TH1F *h_FE122_X_M = new TH1F("FE122_X_M", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE122_X_M);
+
+	TH1F *h_FE122_X_M2 = new TH1F("FE122_X_M2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE122_X_M2);
+
+	TH1F *h_FE12_X = new TH1F("FE12_X", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE12_X);
+
+	TH1F *h_FE12_X_C = new TH1F("FE12_X_C", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE12_X_C);
+
+	TH1F *h_FE12_X_C2 = new TH1F("FE12_X_C2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE12_X_C2);
+
+	TH1F *h_FE12_X_M = new TH1F("FE12_X_M", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE12_X_M);
+
+	TH1F *h_FE12_X_M2 = new TH1F("FE12_X_M2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE12_X_M2);
+
+	TH1F *h_FE12_A = new TH1F("FE12_A", "S0 Horizontal Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE12_A);
+
+	TH1F *h_FE12_A_C = new TH1F("FE12_A_C", "S0 Horizontal Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE12_A_C);
+
+	TH1F *h_FE12_A_C2 = new TH1F("FE12_A_C2", "S0 Horizontal Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE12_A_C2);
+
+	TH1F *h_FE12_A_M = new TH1F("FE12_A_M", "S0 Horizontal Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE12_A_M);
+
+	TH1F *h_FE12_A_M2 = new TH1F("FE12_A_M2", "S0 Horizontal Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE12_A_M2);
+
+	TH1F *h_FE121_Y = new TH1F("FE121_Y", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE121_Y);
+
+	TH1F *h_FE121_Y_C = new TH1F("FE121_Y_C", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE121_Y_C);
+
+	TH1F *h_FE121_Y_C2 = new TH1F("FE121_Y_C2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE121_Y_C2);
+
+	TH1F *h_FE121_Y_M = new TH1F("FE121_Y_M", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE121_Y_M);
+
+	TH1F *h_FE121_Y_M2 = new TH1F("FE121_Y_M2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE121_Y_M2);
+
+	TH1F *h_FE122_Y = new TH1F("FE122_Y", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE122_Y);
+
+	TH1F *h_FE122_Y_C = new TH1F("FE122_Y_C", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE122_Y_C);
+
+	TH1F *h_FE122_Y_C2 = new TH1F("FE122_Y_C2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE122_Y_C2);
+
+	TH1F *h_FE122_Y_M = new TH1F("FE122_Y_M", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE122_Y_M);
+
+	TH1F *h_FE122_Y_M2 = new TH1F("FE122_Y_M2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE122_Y_M2);
+
+	TH1F *h_FE12_Y = new TH1F("FE12_Y", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE12_Y);
+
+	TH1F *h_FE12_Y_C = new TH1F("FE12_Y_C", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE12_Y_C);
+
+	TH1F *h_FE12_Y_C2 = new TH1F("FE12_Y_C2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE12_Y_C2);
+
+	TH1F *h_FE12_Y_M = new TH1F("FE12_Y_M", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE12_Y_M);
+
+	TH1F *h_FE12_Y_M2 = new TH1F("FE12_Y_M2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_FE12_Y_M2);
+
+	TH1F *h_FE12_B = new TH1F("FE12_B", "S0 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE12_B);
+
+	TH1F *h_FE12_B_C = new TH1F("FE12_B_C", "S0 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE12_B_C);
+
+	TH1F *h_FE12_B_C2 = new TH1F("FE12_B_C2", "S0 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE12_B_C2);
+
+	TH1F *h_FE12_B_M = new TH1F("FE12_B_M", "S0 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE12_B_M);
+
+	TH1F *h_FE12_B_M2 = new TH1F("FE12_B_M2", "S0 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_FE12_B_M2);
+
+	TH1F *h_S11_X = new TH1F("S11_X", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S11_X);
+
+	TH1F *h_S11_X_C = new TH1F("S11_X_C", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S11_X_C);
+
+	TH1F *h_S11_X_C2 = new TH1F("S11_X_C2", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S11_X_C2);
+
+	TH1F *h_S11_X_M = new TH1F("S11_X_M", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S11_X_M);
+
+	TH1F *h_S11_X_M2 = new TH1F("S11_X_M2", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S11_X_M2);
+
+	TH1F *h_S12_X = new TH1F("S12_X", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S12_X);
+
+	TH1F *h_S12_X_C = new TH1F("S12_X_C", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S12_X_C);
+
+	TH1F *h_S12_X_C2 = new TH1F("S12_X_C2", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S12_X_C2);
+
+	TH1F *h_S12_X_M = new TH1F("S12_X_M", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S12_X_M);
+
+	TH1F *h_S12_X_M2 = new TH1F("S12_X_M2", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S12_X_M2);
+
+	TH1F *h_S1_X = new TH1F("S1_X", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S1_X);
+
+	TH1F *h_S1_X_C = new TH1F("S1_X_C", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S1_X_C);
+
+	TH1F *h_S1_X_C2 = new TH1F("S1_X_C2", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S1_X_C2);
+
+	TH1F *h_S1_X_M = new TH1F("S1_X_M", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S1_X_M);
+
+	TH1F *h_S1_X_M2 = new TH1F("S1_X_M2", "S0 Horizontal Position [mm]", 5000, -200, 200);
+	hlist->Add(h_S1_X_M2);
+
+	TH1F *h_S1_A = new TH1F("S1_A", "S1 Horizontal Angle [mrad]", 5000, -200, 200);
+	hlist->Add(h_S1_A);
+
+	TH1F *h_S1_A_C = new TH1F("S1_A_C", "S1 Horizontal Angle [mrad]", 5000, -200, 200);
+	hlist->Add(h_S1_A_C);
+
+	TH1F *h_S1_A_C2 = new TH1F("S1_A_C2", "S1 Horizontal Angle [mrad]", 5000, -200, 200);
+	hlist->Add(h_S1_A_C2);
+
+	TH1F *h_S1_A_M = new TH1F("S1_A_M", "S1 Horizontal Angle [mrad]", 5000, -200, 200);
+	hlist->Add(h_S1_A_M);
+
+	TH1F *h_S1_A_M2 = new TH1F("S1_A_M2", "S1 Horizontal Angle [mrad]", 5000, -200, 200);
+	hlist->Add(h_S1_A_M2);
+
+	TH1F *h_S11_Y = new TH1F("S11_Y", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S11_Y);
+
+	TH1F *h_S11_Y_C = new TH1F("S11_Y_C", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S11_Y_C);
+
+	TH1F *h_S11_Y_C2 = new TH1F("S11_Y_C2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S11_Y_C2);
+
+	TH1F *h_S11_Y_M = new TH1F("S11_Y_M", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S11_Y_M);
+
+	TH1F *h_S11_Y_M2 = new TH1F("S11_Y_M2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S11_Y_M2);
+
+	TH1F *h_S12_Y = new TH1F("S12_Y", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S12_Y);
+
+	TH1F *h_S12_Y_C = new TH1F("S12_Y_C", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S12_Y_C);
+
+	TH1F *h_S12_Y_C2 = new TH1F("S12_Y_C2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S12_Y_C2);
+
+	TH1F *h_S12_Y_M = new TH1F("S12_Y_M", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S12_Y_M);
+
+	TH1F *h_S12_Y_M2 = new TH1F("S12_Y_M2", "S0 Vertical Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S12_Y_M2);
+
+	TH1F *h_S1_Y = new TH1F("S1_Y", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S1_Y);
+
+	TH1F *h_S1_Y_C = new TH1F("S1_Y_C", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S1_Y_C);
+
+	TH1F *h_S1_Y_C2 = new TH1F("S1_Y_C2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S1_Y_C2);
+
+	TH1F *h_S1_Y_M = new TH1F("S1_Y_M", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S1_Y_M);
+
+	TH1F *h_S1_Y_M2 = new TH1F("S1_Y_M2", "S0 Horizontal Position [mm]", 5000, -100, 100);
+	hlist->Add(h_S1_Y_M2);
+
+	TH1F *h_S1_B = new TH1F("S1_B", "S1 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_S1_B);
+
+	TH1F *h_S1_B_C = new TH1F("S1_B_C", "S1 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_S1_B_C);
+
+	TH1F *h_S1_B_C2 = new TH1F("S1_B_C2", "S1 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_S1_B_C2);
+
+	TH1F *h_S1_B_M = new TH1F("S1_B_M", "S1 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_S1_B_M);
+
+	TH1F *h_S1_B_M2 = new TH1F("S1_B_M2", "S1 Vertical Angle [mrad]", 5000, -100, 100);
+	hlist->Add(h_S1_B_M2);
+
+	TH1F *h_FE91_h_Q0_Q1 = new TH1F("FE91_h_Q0_Q1", "Q0 - Q1 (Horizontal) at FE9 first PPAC.", 2500, 0, 25);
+	hlist->Add(h_FE91_h_Q0_Q1);
+
+	TH1F *h_FE91_h_Q0_Q1_S[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_FE91_h_Q0_Q1_S[i][j] = new TH1F(Form("FE91_h_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Horizontal, ID  %d and %d) at FE9 first PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_FE91_h_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_FE91_v_Q0_Q1 = new TH1F("FE91_v_Q0_Q1", "Q0 - Q1 (Vertical) at FE9 first PPAC.", 2500, 0, 25);
+	hlist->Add(h_FE91_v_Q0_Q1);
+
+	TH1F *h_FE91_v_Q0_Q1_S[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_FE91_v_Q0_Q1_S[i][j] = new TH1F(Form("FE91_v_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Vertical, ID  %d and %d) at FE9 first PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_FE91_v_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_FE92_h_Q0_Q1 = new TH1F("FE92_h_Q0_Q1", "Q0 - Q1 (Horizontal) at FE9 second PPAC.", 2500, 0, 25);
+	hlist->Add(h_FE92_h_Q0_Q1);
+
+	TH1F *h_FE92_h_Q0_Q1_S[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_FE92_h_Q0_Q1_S[i][j] = new TH1F(Form("FE92_h_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Horizontal, ID  %d and %d) at FE9 second PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_FE92_h_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_FE92_v_Q0_Q1 = new TH1F("FE92_v_Q0_Q1", "Q0 - Q1 (Vertical) at FE9 second PPAC.", 2500, 0, 25);
+	hlist->Add(h_FE92_v_Q0_Q1);
+
+	TH1F *h_FE92_v_Q0_Q1_S[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_FE92_v_Q0_Q1_S[i][j] = new TH1F(Form("FE92_v_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Vertical, ID  %d and %d) at FE9 second PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_FE92_v_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_FE121_h_Q0_Q1 = new TH1F("FE121_h_Q0_Q1", "Q0 - Q1 (Horizontal) at FE12 first PPAC.", 2500, 0, 25);
+	hlist->Add(h_FE121_h_Q0_Q1);
+
+	TH1F *h_FE121_h_Q0_Q1_S[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_FE121_h_Q0_Q1_S[i][j] = new TH1F(Form("FE121_h_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Horizontal, ID  %d and %d) at FE12 first PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_FE121_h_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_FE121_v_Q0_Q1 = new TH1F("FE121_v_Q0_Q1", "Q0 - Q1 (Vertical) at FE12 first PPAC.", 2500, 0, 25);
+	hlist->Add(h_FE121_v_Q0_Q1);
+
+	TH1F *h_FE121_v_Q0_Q1_S[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_FE121_v_Q0_Q1_S[i][j] = new TH1F(Form("FE121_v_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Vertical, ID  %d and %d) at FE12 first PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_FE121_v_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_FE122_h_Q0_Q1 = new TH1F("FE122_h_Q0_Q1", "Q0 - Q1 (Horizontal) at FE12 second PPAC.", 2500, 0, 25);
+	hlist->Add(h_FE122_h_Q0_Q1);
+
+	TH1F *h_FE122_h_Q0_Q1_S[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_FE122_h_Q0_Q1_S[i][j] = new TH1F(Form("FE122_h_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Horizontal, ID  %d and %d) at FE12 second PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_FE122_h_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_FE122_v_Q0_Q1 = new TH1F("FE122_v_Q0_Q1", "Q0 - Q1 (Vertical) at FE12 second PPAC.", 2500, 0, 25);
+	hlist->Add(h_FE122_v_Q0_Q1);
+
+	TH1F *h_FE122_v_Q0_Q1_S[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_FE122_v_Q0_Q1_S[i][j] = new TH1F(Form("FE122_v_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Vertical, ID  %d and %d) at FE12 second PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_FE122_v_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_S11_h_Q0_Q1 = new TH1F("S11_h_Q0_Q1", "Q0 - Q1 (Horizontal) at S1 first PPAC.", 2500, 0, 25);
+	hlist->Add(h_S11_h_Q0_Q1);
+
+	TH1F *h_S11_h_Q0_Q1_S[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_S11_h_Q0_Q1_S[i][j] = new TH1F(Form("S11_h_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Horizontal, ID  %d and %d) at S1 first PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_S11_h_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_S11_v_Q0_Q1 = new TH1F("S11_v_Q0_Q1", "Q0 - Q1 (Vertical) at S1 first PPAC.", 2500, 0, 25);
+	hlist->Add(h_S11_v_Q0_Q1);
+
+	TH1F *h_S11_v_Q0_Q1_S[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_S11_v_Q0_Q1_S[i][j] = new TH1F(Form("S11_v_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Vertical, ID  %d and %d) at S1 first PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_S11_v_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_S12_h_Q0_Q1 = new TH1F("S12_h_Q0_Q1", "Q0 - Q1 (Horizontal) at S1 second PPAC.", 2500, 0, 25);
+	hlist->Add(h_S12_h_Q0_Q1);
+
+	TH1F *h_S12_h_Q0_Q1_S[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_S12_h_Q0_Q1_S[i][j] = new TH1F(Form("S12_h_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Horizontal, ID  %d and %d) at S1 second PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_S12_h_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	TH1F *h_S12_v_Q0_Q1 = new TH1F("S12_v_Q0_Q1", "Q0 - Q1 (Vertical) at S1 second PPAC.", 2500, 0, 25);
+	hlist->Add(h_S12_v_Q0_Q1);
+
+	TH1F *h_S12_v_Q0_Q1_S[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+		{
+			if (abs(i - j) == 1)
+			{
+				h_S12_v_Q0_Q1_S[i][j] = new TH1F(Form("S12_v_Q0_Q1_S_%d_%d", i, j), Form("Q0 - Q1 (Vertical, ID  %d and %d) at S1 second PPAC.", i, j), 2500, 0, 25);
+				hlist->Add(h_S12_v_Q0_Q1_S[i][j]);
+			}
+		}
+	}
+
+	// Histograms with the Q0-Q1 conversion coefficient method used for the position reconstruction.
+
+	//   TFile *file_FE9 = new TFile("/home/sh12s24/art_analysis/user/carlos/output/Analysis/SRPPAC_Conversion/FE9_Conversion_Coefficient.root");
+	TFile *file_FE9 = new TFile("/u/ddas/software/work/artemis-oedo/output/Analysis/SRPPAC_Conversion/FE9_Conversion_Coefficient.root"); // for lxpool artemis installation
+
+	file_FE9->cd();
+
+	TH1F *h_FE91_h_Q0_Q1_F = (TH1F *)file_FE9->Get("FE91_h_Q0_Q1_F");
+	TH1F *h_FE91_h_Q0_Q1_S_F[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_FE91_h_Q0_Q1_S_F[i][j] = (TH1F *)file_FE9->Get(Form("FE91_h_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	TH1F *h_FE91_v_Q0_Q1_F = (TH1F *)file_FE9->Get("FE91_v_Q0_Q1_F");
+	TH1F *h_FE91_v_Q0_Q1_S_F[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_FE91_v_Q0_Q1_S_F[i][j] = (TH1F *)file_FE9->Get(Form("FE91_v_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	TH1F *h_FE92_h_Q0_Q1_F = (TH1F *)file_FE9->Get("FE92_h_Q0_Q1_F");
+	TH1F *h_FE92_h_Q0_Q1_S_F[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_FE92_h_Q0_Q1_S_F[i][j] = (TH1F *)file_FE9->Get(Form("FE92_h_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	TH1F *h_FE92_v_Q0_Q1_F = (TH1F *)file_FE9->Get("FE92_v_Q0_Q1_F");
+	TH1F *h_FE92_v_Q0_Q1_S_F[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_FE92_v_Q0_Q1_S_F[i][j] = (TH1F *)file_FE9->Get(Form("FE92_v_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	//   TFile *file_FE12 = new TFile("/home/sh12s24/art_analysis/user/carlos/output/Analysis/SRPPAC_Conversion/FE12_Conversion_Coefficient.root");
+	TFile *file_FE12 = new TFile("/u/ddas/software/work/artemis-oedo/output/Analysis/SRPPAC_Conversion/FE12_Conversion_Coefficient.root"); // for lxpool artemis installation
+
+	file_FE12->cd();
+
+	TH1F *h_FE121_h_Q0_Q1_F = (TH1F *)file_FE12->Get("FE121_h_Q0_Q1_F");
+	TH1F *h_FE121_h_Q0_Q1_S_F[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_FE121_h_Q0_Q1_S_F[i][j] = (TH1F *)file_FE12->Get(Form("FE121_h_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	TH1F *h_FE121_v_Q0_Q1_F = (TH1F *)file_FE12->Get("FE121_v_Q0_Q1_F");
+	TH1F *h_FE121_v_Q0_Q1_S_F[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_FE121_v_Q0_Q1_S_F[i][j] = (TH1F *)file_FE12->Get(Form("FE121_v_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	TH1F *h_FE122_h_Q0_Q1_F = (TH1F *)file_FE12->Get("FE122_h_Q0_Q1_F");
+	TH1F *h_FE122_h_Q0_Q1_S_F[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_FE122_h_Q0_Q1_S_F[i][j] = (TH1F *)file_FE12->Get(Form("FE122_h_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	TH1F *h_FE122_v_Q0_Q1_F = (TH1F *)file_FE12->Get("FE122_v_Q0_Q1_F");
+	TH1F *h_FE122_v_Q0_Q1_S_F[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_FE122_v_Q0_Q1_S_F[i][j] = (TH1F *)file_FE12->Get(Form("FE122_v_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	//   TFile *file_S1 = new TFile("/home/sh12s24/art_analysis/user/carlos/output/Analysis/SRPPAC_Conversion/S1_Conversion_Coefficient.root");
+	TFile *file_S1 = new TFile("/u/ddas/software/work/artemis-oedo/output/Analysis/SRPPAC_Conversion/S1_Conversion_Coefficient.root"); // for lxpool artemis installation
+
+	file_S1->cd();
+
+	TH1F *h_S11_h_Q0_Q1_F = (TH1F *)file_S1->Get("S11_h_Q0_Q1_F");
+
+	TH1F *h_S11_h_Q0_Q1_S_F[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_S11_h_Q0_Q1_S_F[i][j] = (TH1F *)file_S1->Get(Form("S11_h_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	TH1F *h_S11_v_Q0_Q1_F = (TH1F *)file_S1->Get("S11_v_Q0_Q1_F");
+	TH1F *h_S11_v_Q0_Q1_S_F[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_S11_v_Q0_Q1_S_F[i][j] = (TH1F *)file_S1->Get(Form("S11_v_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	TH1F *h_S12_h_Q0_Q1_F = (TH1F *)file_S1->Get("S12_h_Q0_Q1_F");
+	TH1F *h_S12_h_Q0_Q1_S_F[94][94];
+	for (int i = 0; i < 94; i++)
+	{
+		for (int j = 0; j < 94; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_S12_h_Q0_Q1_S_F[i][j] = (TH1F *)file_S1->Get(Form("S12_h_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	TH1F *h_S12_v_Q0_Q1_F = (TH1F *)file_S1->Get("S12_v_Q0_Q1_F");
+	TH1F *h_S12_v_Q0_Q1_S_F[58][58];
+	for (int i = 0; i < 58; i++)
+	{
+		for (int j = 0; j < 58; j++)
+			if (abs(i - j) == 1)
+			{
+				{
+					h_S12_v_Q0_Q1_S_F[i][j] = (TH1F *)file_S1->Get(Form("S12_v_Q0_Q1_S_F_%d_%d", i, j));
+				}
+			}
+	}
+
+	/***************************
+	  Declaration of Variables
+	 ***************************/
+
+	// Variables used in the analysis. Longitudes in mm, times in ns, energies and masses in MeV (or MeV/nucleon for the beam) and angles in degrees.
+
+	double PI = 3.14159265358979323846; // PI, the one and only.
+	double M_50Ca = 46535.0915;			// Mass of 50Ca.
+	double M_51Sc = 47462.924;			// Mass of 51Sc.
+	double M_49K = 45613.5757;			// Mass of 49K.
+
+	double F3;
+	double F3DS;
+	double S0;
+	double S1;
+	double FE12;
+
+	int SRPPAC_max_mult = 7; // maximun number of strips we read for an ion.
+	int SRPPAC_max_ion = 7;	 // maximun number of strips ions we read.
+
+	int F3_E_Counter = 0;
+	int F3_Counter = 0;
+	int FE91_A_E_Counter = 0;
+	int FE91_A_Counter = 0;
+	int FE92_A_E_Counter = 0;
+	int FE92_A_Counter = 0;
+	int FE9_A_Counter = 0;
+	int F3_FE9_A_Counter = 0;
+	int FE91_X_Counter = 0;
+	int FE91_X_E_Counter = 0;
+	int FE91_XA_Counter = 0;
+	int FE91_XA_E_Counter = 0;
+	int FE91_Y_Counter = 0;
+	int FE91_Y_E_Counter = 0;
+	int FE91_YA_Counter = 0;
+	int FE91_YA_E_Counter = 0;
+	int FE92_X_Counter = 0;
+	int FE92_X_E_Counter = 0;
+	int FE92_XA_Counter = 0;
+	int FE92_XA_E_Counter = 0;
+	int FE92_Y_Counter = 0;
+	int FE92_Y_E_Counter = 0;
+	int FE92_YA_Counter = 0;
+	int FE92_YA_E_Counter = 0;
+	int FE91_XY_Counter = 0;
+	int FE91_YX_Counter = 0;
+	int FE92_XY_Counter = 0;
+	int FE92_YX_Counter = 0;
+	int FE91_X_Q_Counter = 0;
+	int FE91_Y_Q_Counter = 0;
+	int FE92_X_Q_Counter = 0;
+	int FE92_Y_Q_Counter = 0;
+	int FE121_A_E_Counter = 0;
+	int FE121_A_Counter = 0;
+	int FE122_A_E_Counter = 0;
+	int FE122_A_Counter = 0;
+	int FE12_A_Counter = 0;
+	int F3_FE12_A_Counter = 0;
+	int FE121_X_Counter = 0;
+	int FE121_X_E_Counter = 0;
+	int FE121_XA_Counter = 0;
+	int FE121_XA_E_Counter = 0;
+	int FE121_Y_Counter = 0;
+	int FE121_Y_E_Counter = 0;
+	int FE121_YA_Counter = 0;
+	int FE121_YA_E_Counter = 0;
+	int FE122_X_Counter = 0;
+	int FE122_X_E_Counter = 0;
+	int FE122_XA_Counter = 0;
+	int FE122_XA_E_Counter = 0;
+	int FE122_Y_Counter = 0;
+	int FE122_Y_E_Counter = 0;
+	int FE122_YA_Counter = 0;
+	int FE122_YA_E_Counter = 0;
+	int FE121_XY_Counter = 0;
+	int FE121_YX_Counter = 0;
+	int FE122_XY_Counter = 0;
+	int FE122_YX_Counter = 0;
+	int FE121_X_Q_Counter = 0;
+	int FE121_Y_Q_Counter = 0;
+	int FE122_X_Q_Counter = 0;
+	int FE122_Y_Q_Counter = 0;
+	int S11_A_E_Counter = 0;
+	int S11_A_Counter = 0;
+	int S12_A_E_Counter = 0;
+	int S12_A_Counter = 0;
+	int S1_A_Counter = 0;
+	int F3_S1_A_Counter = 0;
+	int S11_X_Counter = 0;
+	int S11_X_E_Counter = 0;
+	int S11_XA_Counter = 0;
+	int S11_XA_E_Counter = 0;
+	int S11_Y_Counter = 0;
+	int S11_Y_E_Counter = 0;
+	int S11_YA_Counter = 0;
+	int S11_YA_E_Counter = 0;
+	int S12_X_E_Counter = 0;
+	int S12_X_Counter = 0;
+	int S12_XA_Counter = 0;
+	int S12_XA_E_Counter = 0;
+	int S12_Y_Counter = 0;
+	int S12_Y_E_Counter = 0;
+	int S12_YA_Counter = 0;
+	int S12_YA_E_Counter = 0;
+	int S11_XY_Counter = 0;
+	int S11_YX_Counter = 0;
+	int S12_XY_Counter = 0;
+	int S12_YX_Counter = 0;
+	int S11_X_Q_Counter = 0;
+	int S11_Y_Q_Counter = 0;
+	int S12_X_Q_Counter = 0;
+	int S12_Y_Q_Counter = 0;
+
+	double F3_Time = -1000000;	  // Time at F3 Diamond
+	double F3_T[SRPPAC_max_mult]; // Time at F3 Diamond (array).
+	double FE9_Z = 500;			  // Longitudinal distance between FE9 PPACs.
+
+	// double FE91_X_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at FE9 first PPAC.
+	// double FE92_X_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at FE9 second PPAC.
+	// double FE91_Y_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at FE9 first PPAC.
+	// double FE92_Y_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at FE9 second PPAC.
+	// double FE91_X_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE9 first PPAC.
+	// double FE92_X_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE9 second PPAC.
+	// double FE91_Y_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE9 first PPAC.
+	// double FE92_Y_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE9 second PPAC.
+	// double FE91_X_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE9 first PPAC.
+	// double FE92_X_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE9 second PPAC.
+	// double FE91_Y_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE9 first PPAC.
+	// double FE92_Y_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE9 second PPAC.
+
+	double FE91_X_I[3][7][7];	 // ID, time and charge at FE9 first PPAC.
+	double FE92_X_I[3][7][7];	 // ID, time and charge at FE9 second PPAC.
+	double FE91_Y_I[3][7][7];	 // ID, time and charge at FE9 first PPAC.
+	double FE92_Y_I[3][7][7];	 // ID, time and charge at FE9 second PPAC.
+	double FE91_X_I_C[3][7][7];	 // Corrected ID, time and charge at FE9 first PPAC.
+	double FE92_X_I_C[3][7][7];	 // Corrected ID, time and charge at FE9 second PPAC.
+	double FE91_Y_I_C[3][7][7];	 // Corrected ID, time and charge at FE9 first PPAC.
+	double FE92_Y_I_C[3][7][7];	 // Corrected ID, time and charge at FE9 second PPAC.
+	double FE91_X_I_C2[3][7][7]; // Corrected ID, time and charge at FE9 first PPAC.
+	double FE92_X_I_C2[3][7][7]; // Corrected ID, time and charge at FE9 second PPAC.
+	double FE91_Y_I_C2[3][7][7]; // Corrected ID, time and charge at FE9 first PPAC.
+	double FE92_Y_I_C2[3][7][7]; // Corrected ID, time and charge at FE9 second PPAC.
+
+	double FE91_X[SRPPAC_max_ion];	  // Horizontal position at FE9 first PPAC.
+	double FE92_X[SRPPAC_max_ion];	  // Horizontal position at FE9 second PPAC.
+	double FE91_Y[SRPPAC_max_ion];	  // Vertical position at FE9 first PPAC.
+	double FE92_Y[SRPPAC_max_ion];	  // Vertical position at FE9 second PPAC.
+	double FE91_X_C[SRPPAC_max_ion];  // Horizontal position at FE9 first PPAC.
+	double FE92_X_C[SRPPAC_max_ion];  // Horizontal position at FE9 second PPAC.
+	double FE91_Y_C[SRPPAC_max_ion];  // Vertical position at FE9 first PPAC.
+	double FE92_Y_C[SRPPAC_max_ion];  // Vertical position at FE9 second PPAC.
+	double FE91_X_C2[SRPPAC_max_ion]; // Horizontal position at FE9 first PPAC.
+	double FE92_X_C2[SRPPAC_max_ion]; // Horizontal position at FE9 second PPAC.
+	double FE91_Y_C2[SRPPAC_max_ion]; // Vertical position at FE9 first PPAC.
+	double FE92_Y_C2[SRPPAC_max_ion]; // Vertical position at FE9 second PPAC.
+	double FE91_X_M[SRPPAC_max_ion];  // Horizontal position at FE9 first PPAC.
+	double FE92_X_M[SRPPAC_max_ion];  // Horizontal position at FE9 second PPAC.
+	double FE91_Y_M[SRPPAC_max_ion];  // Vertical position at FE9 first PPAC.
+	double FE92_Y_M[SRPPAC_max_ion];  // Vertical position at FE9 second PPAC.
+	double FE91_X_M2[SRPPAC_max_ion]; // Horizontal position at FE9 first PPAC.
+	double FE92_X_M2[SRPPAC_max_ion]; // Horizontal position at FE9 second PPAC.
+	double FE91_Y_M2[SRPPAC_max_ion]; // Vertical position at FE9 first PPAC.
+	double FE92_Y_M2[SRPPAC_max_ion]; // Vertical position at FE9 second PPAC.
+	double FE91_X_factor = 36;		  // Charge factor at FE9 first PPAC.
+	double FE91_Y_factor = 50;		  // Charge factor at FE9 first PPAC.
+	double FE92_X_factor = 39;		  // Charge factor at FE9 second PPAC.
+	double FE92_Y_factor = 36;		  // Charge factor at FE9 second PPAC.
+	double FE91_T_I[SRPPAC_max_ion];  // Time at FE9 first PPAC.
+	double FE92_T_I[SRPPAC_max_ion];  // Time at FE9 second PPAC.
+	double FE9_T_I[SRPPAC_max_ion];	  // Time at FE9 (average between anodes).
+	double PID_T[SRPPAC_max_ion];	  // Time of Flight between F3 and FE9.
+	double FE9_X[SRPPAC_max_ion];	  // Horizontal position at FE9 focal plane.
+	double FE9_X_C[SRPPAC_max_ion];	  // Horizontal position between FE9 focal plane.
+	double FE9_X_C2[SRPPAC_max_ion];  // Horizontal position between FE9 focal plane.
+	double FE9_X_M[SRPPAC_max_ion];	  // Horizontal position between FE9 focal plane.
+	double FE9_X_M2[SRPPAC_max_ion];  // Horizontal position between FE9 focal plane.
+	double FE9_Y[SRPPAC_max_ion];	  // Vertical position at FE9 focal plane.
+	double FE9_Y_C[SRPPAC_max_ion];	  // Vertical position between FE9 focal plane.
+	double FE9_Y_C2[SRPPAC_max_ion];  // Vertical position between FE9 focal plane.
+	double FE9_Y_M[SRPPAC_max_ion];	  // Vertical position between FE9 focal plane.
+	double FE9_Y_M2[SRPPAC_max_ion];  // Vertical position between FE9 focal plane.
+	double FE9_A[SRPPAC_max_ion];	  // Horizontal angle at FE9 focal plane.
+	double FE9_A_C[SRPPAC_max_ion];	  // Horizontal angle between FE9 focal plane.
+	double FE9_A_C2[SRPPAC_max_ion];  // Horizontal angle between FE9 focal plane.
+	double FE9_A_M[SRPPAC_max_ion];	  // Horizontal angle between FE9 focal plane.
+	double FE9_A_M2[SRPPAC_max_ion];  // Horizontal angle between FE9 focal plane.
+	double FE9_B[SRPPAC_max_ion];	  // Vertical angle at FE9 focal plane.
+	double FE9_B_C[SRPPAC_max_ion];	  // Vertical angle between FE9 focal plane.
+	double FE9_B_C2[SRPPAC_max_ion];  // Vertical angle between FE9 focal plane.
+	double FE9_B_M[SRPPAC_max_ion];	  // Vertical angle between FE9 focal plane.
+	double FE9_B_M2[SRPPAC_max_ion];  // Vertical angle between FE9 focal plane.
+
+	// double FE12_S0 = 2017;
+	double Z_ToF = 14871.68;
+	// double Z_ToF = 14478.68; //Longitudinal distance between FE9 (Middle of PPACs) and FE12.
+	// double Z_ToF = 14539.93; //Longitudinal distance between FE9 and FE12.
+	double FE12_S0 = 1962; // Longitudinal distance between FE12 first PPAC and S0.
+	double FE12_Z = 500;   // Longitudinal distance between FE12 PPACs.
+
+	// double FE121_X_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at FE12 first PPAC.
+	// double FE122_X_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at FE12 second PPAC.
+	// double FE121_Y_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at FE12 first PPAC.
+	// double FE122_Y_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at FE12 second PPAC.
+	// double FE121_X_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE12 first PPAC.
+	// double FE122_X_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE12 second PPAC.
+	// double FE121_Y_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE12 first PPAC.
+	// double FE122_Y_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE12 second PPAC.
+	// double FE121_X_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE12 first PPAC.
+	// double FE122_X_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE12 second PPAC.
+	// double FE121_Y_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE12 first PPAC.
+	// double FE122_Y_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at FE12 second PPAC.
+
+	double FE121_X_I[3][7][7];	  // ID, time and charge at FE12 first PPAC.
+	double FE122_X_I[3][7][7];	  // ID, time and charge at FE12 second PPAC.
+	double FE121_Y_I[3][7][7];	  // ID, time and charge at FE12 first PPAC.
+	double FE122_Y_I[3][7][7];	  // ID, time and charge at FE12 second PPAC.
+	double FE121_X_I_C[3][7][7];  // Corrected ID, time and charge at FE12 first PPAC.
+	double FE122_X_I_C[3][7][7];  // Corrected ID, time and charge at FE12 second PPAC.
+	double FE121_Y_I_C[3][7][7];  // Corrected ID, time and charge at FE12 first PPAC.
+	double FE122_Y_I_C[3][7][7];  // Corrected ID, time and charge at FE12 second PPAC.
+	double FE121_X_I_C2[3][7][7]; // Corrected ID, time and charge at FE12 first PPAC.
+	double FE122_X_I_C2[3][7][7]; // Corrected ID, time and charge at FE12 second PPAC.
+	double FE121_Y_I_C2[3][7][7]; // Corrected ID, time and charge at FE12 first PPAC.
+	double FE122_Y_I_C2[3][7][7]; // Corrected ID, time and charge at FE12 second PPAC.
+
+	double FE121_X[SRPPAC_max_ion];	   // Horizontal position at FE12 first PPAC.
+	double FE122_X[SRPPAC_max_ion];	   // Horizontal position at FE12 second PPAC.
+	double FE121_Y[SRPPAC_max_ion];	   // Vertical position at FE12 first PPAC.
+	double FE122_Y[SRPPAC_max_ion];	   // Vertical position at FE12 second PPAC.
+	double FE121_X_C[SRPPAC_max_ion];  // Horizontal position at FE12 first PPAC.
+	double FE122_X_C[SRPPAC_max_ion];  // Horizontal position at FE12 second PPAC.
+	double FE121_Y_C[SRPPAC_max_ion];  // Vertical position at FE12 first PPAC.
+	double FE122_Y_C[SRPPAC_max_ion];  // Vertical position at FE12 second PPAC.
+	double FE121_X_C2[SRPPAC_max_ion]; // Horizontal position at FE12 first PPAC.
+	double FE122_X_C2[SRPPAC_max_ion]; // Horizontal position at FE12 second PPAC.
+	double FE121_Y_C2[SRPPAC_max_ion]; // Vertical position at FE12 first PPAC.
+	double FE122_Y_C2[SRPPAC_max_ion]; // Vertical position at FE12 second PPAC.
+	double FE121_X_M[SRPPAC_max_ion];  // Horizontal position at FE12 first PPAC.
+	double FE122_X_M[SRPPAC_max_ion];  // Horizontal position at FE12 second PPAC.
+	double FE121_Y_M[SRPPAC_max_ion];  // Vertical position at FE12 first PPAC.
+	double FE122_Y_M[SRPPAC_max_ion];  // Vertical position at FE12 second PPAC.
+	double FE121_X_M2[SRPPAC_max_ion]; // Horizontal position at FE12 first PPAC.
+	double FE122_X_M2[SRPPAC_max_ion]; // Horizontal position at FE12 second PPAC.
+	double FE121_Y_M2[SRPPAC_max_ion]; // Vertical position at FE12 first PPAC.
+	double FE122_Y_M2[SRPPAC_max_ion]; // Vertical position at FE12 second PPAC.
+	double FE121_X_factor = 36;
+	;									  // Charge factor at FE12 first PPAC.
+	double FE121_Y_factor = 50;			  // Charge factor at FE12 first PPAC.
+	double FE122_X_factor = 39;			  // Charge factor at FE12 second PPAC.
+	double FE122_Y_factor = 36;			  // Charge factor at FE12 second PPAC.
+	double FE121_T_I[SRPPAC_max_ion];	  // Time at FE12 first PPAC.
+	double FE122_T_I[SRPPAC_max_ion];	  // Time at FE12 second PPAC.
+	double FE12_T_I[SRPPAC_max_ion];	  // Time at FE12 (average between anodes).
+	double Beam_T[SRPPAC_max_ion];		  // Time of Flight between FE9 and FE12.
+	double FE12_X[SRPPAC_max_ion];		  // Horizontal position at FE12 focal plane.
+	double FE12_X_C[SRPPAC_max_ion];	  // Horizontal position between FE12 focal plane.
+	double FE12_X_C2[SRPPAC_max_ion];	  // Horizontal position between FE12 focal plane.
+	double FE12_X_M[SRPPAC_max_ion];	  // Horizontal position between FE12 focal plane.
+	double FE12_X_M2[SRPPAC_max_ion];	  // Horizontal position between FE12 focal plane.
+	double FE12_Y[SRPPAC_max_ion];		  // Vertical position at FE12 focal plane.
+	double FE12_Y_C[SRPPAC_max_ion];	  // Vertical position between FE12 focal plane.
+	double FE12_Y_C2[SRPPAC_max_ion];	  // Vertical position between FE12 focal plane.
+	double FE12_Y_M[SRPPAC_max_ion];	  // Vertical position between FE12 focal plane.
+	double FE12_Y_M2[SRPPAC_max_ion];	  // Vertical position between FE12 focal plane.
+	double FE12_A[SRPPAC_max_ion];		  // Horizontal angle at FE12 focal plane.
+	double FE12_A_C[SRPPAC_max_ion];	  // Horizontal angle between FE12 focal plane.
+	double FE12_A_C2[SRPPAC_max_ion];	  // Horizontal angle between FE12 focal plane.
+	double FE12_A_M[SRPPAC_max_ion];	  // Horizontal angle between FE12 focal plane.
+	double FE12_A_M2[SRPPAC_max_ion];	  // Horizontal angle between FE12 focal plane.
+	double FE12_B[SRPPAC_max_ion];		  // Vertical angle at FE12 focal plane.
+	double FE12_B_C[SRPPAC_max_ion];	  // Vertical angle between FE12 focal plane.
+	double FE12_B_C2[SRPPAC_max_ion];	  // Vertical angle between FE12 focal plane.
+	double FE12_B_M[SRPPAC_max_ion];	  // Vertical angle between FE12 focal plane.
+	double FE12_B_M2[SRPPAC_max_ion];	  // Vertical angle between FE12 focal plane.
+	double FE12_Theta[SRPPAC_max_ion];	  // Angle at FE12 focal plane.
+	double FE12_Theta_C[SRPPAC_max_ion];  // Angle between FE12 focal plane.
+	double FE12_Theta_C2[SRPPAC_max_ion]; // Angle between FE12 focal plane.
+	double FE12_Theta_M[SRPPAC_max_ion];  // Angle between FE12 focal plane.
+	double FE12_Theta_M2[SRPPAC_max_ion]; // Angle between FE12 focal plane.
+
+	double beta;		  // Relativistic beta between FE9 and FE12.
+	double gamma;		  // Relativistic gamma between FE9 and FE12.
+	double E_Beam;		  // Energy of the degraded 50Ca beam.
+	double E_Beam_C = 15; // Corrected energy of the degraded 50Ca beam.
+
+	double S1_S0 = 560.8; // Longitudinal distance between S1 First SR-PPAC and S1 focal plane.
+	double S1_Z = 350;	  // Longitudinal distance between S1 PPACs.
+
+	// double S11_X_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at S1 first PPAC.
+	// double S12_X_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at S1 second PPAC.
+	// double S11_Y_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at S1 first PPAC.
+	// double S12_Y_I[3][SRPPAC_max_mult][SRPPAC_max_ion]; //ID, time and charge at S1 second PPAC.
+	// double S11_X_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at S1 first PPAC.
+	// double S12_X_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at S1 second PPAC.
+	// double S11_Y_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at S1 first PPAC.
+	// double S12_Y_I_C[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at S1 second PPAC.
+	// double S11_X_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at S1 first PPAC.
+	// double S12_X_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at S1 second PPAC.
+	// double S11_Y_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at S1 first PPAC.
+	// double S12_Y_I_C2[3][SRPPAC_max_mult][SRPPAC_max_ion]; //Corrected ID, time and charge at S1 second PPAC.
+
+	double S11_X_I[3][7][7];	// ID, time and charge at S1 first PPAC.
+	double S12_X_I[3][7][7];	// ID, time and charge at S1 second PPAC.
+	double S11_Y_I[3][7][7];	// ID, time and charge at S1 first PPAC.
+	double S12_Y_I[3][7][7];	// ID, time and charge at S1 second PPAC.
+	double S11_X_I_C[3][7][7];	// Corrected ID, time and charge at S1 first PPAC.
+	double S12_X_I_C[3][7][7];	// Corrected ID, time and charge at S1 second PPAC.
+	double S11_Y_I_C[3][7][7];	// Corrected ID, time and charge at S1 first PPAC.
+	double S12_Y_I_C[3][7][7];	// Corrected ID, time and charge at S1 second PPAC.
+	double S11_X_I_C2[3][7][7]; // Corrected ID, time and charge at S1 first PPAC.
+	double S12_X_I_C2[3][7][7]; // Corrected ID, time and charge at S1 second PPAC.
+	double S11_Y_I_C2[3][7][7]; // Corrected ID, time and charge at S1 first PPAC.
+	double S12_Y_I_C2[3][7][7]; // Corrected ID, time and charge at S1 second PPAC.
+
+	double S11_X[SRPPAC_max_ion];		// Horizontal position at S1 first PPAC.
+	double S12_X[SRPPAC_max_ion];		// Horizontal position at S1 second PPAC.
+	double S11_Y[SRPPAC_max_ion];		// Vertical position at S1 first PPAC.
+	double S12_Y[SRPPAC_max_ion];		// Vertical position at S1 second PPAC.
+	double S11_X_C[SRPPAC_max_ion];		// Horizontal position at S1 first PPAC.
+	double S12_X_C[SRPPAC_max_ion];		// Horizontal position at S1 second PPAC.
+	double S11_Y_C[SRPPAC_max_ion];		// Vertical position at S1 first PPAC.
+	double S12_Y_C[SRPPAC_max_ion];		// Vertical position at S1 second PPAC.
+	double S11_X_C2[SRPPAC_max_ion];	// Horizontal position at S1 first PPAC.
+	double S12_X_C2[SRPPAC_max_ion];	// Horizontal position at S1 second PPAC.
+	double S11_Y_C2[SRPPAC_max_ion];	// Vertical position at S1 first PPAC.
+	double S12_Y_C2[SRPPAC_max_ion];	// Vertical position at S1 second PPAC.
+	double S11_X_M[SRPPAC_max_ion];		// Horizontal position at S1 first PPAC.
+	double S12_X_M[SRPPAC_max_ion];		// Horizontal position at S1 second PPAC.
+	double S11_Y_M[SRPPAC_max_ion];		// Vertical position at S1 first PPAC.
+	double S12_Y_M[SRPPAC_max_ion];		// Vertical position at S1 second PPAC.
+	double S11_X_M2[SRPPAC_max_ion];	// Horizontal position at S1 first PPAC.
+	double S12_X_M2[SRPPAC_max_ion];	// Horizontal position at S1 second PPAC.
+	double S11_Y_M2[SRPPAC_max_ion];	// Vertical position at S1 first PPAC.
+	double S12_Y_M2[SRPPAC_max_ion];	// Vertical position at S1 second PPAC.
+	double S11_X_factor = 48;			// Charge factor at S1 first PPAC.
+	double S11_Y_factor = 50;			// Charge factor at S1 first PPAC.
+	double S12_X_factor = 46;			// Charge factor at S1 second PPAC.
+	double S12_Y_factor = 52;			// Charge factor at S1 second PPAC.
+	double S11_T_I[SRPPAC_max_ion];		// Time at S1 first PPAC.
+	double S12_T_I[SRPPAC_max_ion];		// Time at S1 second PPAC.
+	double S1_T_I[SRPPAC_max_ion];		// Time at S1 (average between anodes).
+	double S1PID_T[SRPPAC_max_ion];		// Time at S1 (average between anodes).
+	double S1_X[SRPPAC_max_ion];		// Horizontal position at S1 focal plane.
+	double S1_X_C[SRPPAC_max_ion];		// Horizontal position between S1 focal plane.
+	double S1_X_C2[SRPPAC_max_ion];		// Horizontal position between S1 focal plane.
+	double S1_X_M[SRPPAC_max_ion];		// Horizontal position between S1 focal plane.
+	double S1_X_M2[SRPPAC_max_ion];		// Horizontal position between S1 focal plane.
+	double S1_Y[SRPPAC_max_ion];		// Vertical position at S1 focal plane.
+	double S1_Y_C[SRPPAC_max_ion];		// Vertical position between S1 focal plane.
+	double S1_Y_C2[SRPPAC_max_ion];		// Vertical position between S1 focal plane.
+	double S1_Y_M[SRPPAC_max_ion];		// Vertical position between S1 focal plane.
+	double S1_Y_M2[SRPPAC_max_ion];		// Vertical position between S1 focal plane.
+	double S1_A[SRPPAC_max_ion];		// Horizontal angle at S1 focal plane.
+	double S1_A_C[SRPPAC_max_ion];		// Horizontal angle between S1 focal plane.
+	double S1_A_C2[SRPPAC_max_ion];		// Horizontal angle between S1 focal plane.
+	double S1_A_M[SRPPAC_max_ion];		// Horizontal angle between S1 focal plane.
+	double S1_A_M2[SRPPAC_max_ion];		// Horizontal angle between S1 focal plane.
+	double S1_B[SRPPAC_max_ion];		// Vertical angle at S1 focal plane.
+	double S1_B_C[SRPPAC_max_ion];		// Vertical angle between S1 focal plane.
+	double S1_B_C2[SRPPAC_max_ion];		// Vertical angle between S1 focal plane.
+	double S1_B_M[SRPPAC_max_ion];		// Vertical angle between S1 focal plane.
+	double S1_B_M2[SRPPAC_max_ion];		// Vertical angle between S1 focal plane.
+	double S1_Theta[SRPPAC_max_ion];	// Angle at S1 focal plane.
+	double S1_Theta_C[SRPPAC_max_ion];	// Angle between S1 focal plane.
+	double S1_Theta_C2[SRPPAC_max_ion]; // Angle between S1 focal plane.
+	double S1_Theta_M[SRPPAC_max_ion];	// Angle between S1 focal plane.
+	double S1_Theta_M2[SRPPAC_max_ion]; // Angle between S1 focal plane.
+	double S1_R[SRPPAC_max_ion];		// Radial position at S1 focal plane.
+	double S1_R_C[SRPPAC_max_ion];		// Radial position between S1 focal plane.
+	double S1_R_C2[SRPPAC_max_ion];		// Radial position between S1 focal plane.
+	double S1_R_M[SRPPAC_max_ion];		// Radial position between S1 focal plane.
+	double S1_R_M2[SRPPAC_max_ion];		// Radial position between S1 focal plane.
+
+	double FE9_E[SRPPAC_max_ion];  // Energy in MeV/u at FE9. This comes from PID_T_0 TOF.
+	double FE12_E[SRPPAC_max_ion]; // Energy in MeV/u at FE12. This comes from Beam_T_0 TOF.
+	double S1_E[SRPPAC_max_ion];   // Energy in MeV/u at S1. This comes from S1PID_T_0 TOF.
+
+	double IC_Charge = 0;		 // Charge measured by the Ionization Chamber.
+	double IC_Brho_zero = 1.407; // Brho at the central trajectory as determined during the experiment.
+	double IC_X = -0.4;			 //(x|x) term as determined for sharaq12 experiment.
+	// double IC_X = 10; //(x|x) term as determined for sharaq12 experiment.
+	double IC_delta = -2222;   //(x|delta) term [mm] as determined for sharaq12 experiment.
+	double IC_delta_a = 50000; //(x|delta_a) term [mm/rad] as determined for sharaq12 experiment.
+	double IC_Brho;			   // Brho
+	double AQ;				   // A/Q at IC.
+	double IC_C_RAW[30];
+	double IC_E[30];
+	double IC_E_Cal[30];
+	double IC_E_max;
+	double IC_segment = 25.233; // Length of each individual segment [mm].
+	double IC_Z;
+	double IC_Telescope_deltaE;
+	double IC_Telescope_E;
+
+	// Functions used in the analysis.
+	double f_SRPPAC_gain(int a, int b, int c);
+	double f_SRPPAC_gain2(int o, int a, int b, int c);
+	// void f_sort (double array[3][SRPPAC_max_mult][SRPPAC_max_ion]); //Function which returns an SR-PPAC array ordered from higher to lower energy
+	void f_sort(double array[3][7][7]);
+
+	// Files we read in the analysis.
+	double list_SRPPAC_gain[2][6][94]; // First index = 0 (1) means vertical (horizontal)strips, second index indicates SRPPAC index starting from FE91 and third index strip number starting from 0.
+	for (int i = 0; i < 2; i++)
+	{
+		for (int j = 0; j < 6; j++)
+		{
+			for (int k = 0; k < 94; k++)
+			{
+				list_SRPPAC_gain[i][j][k] = f_SRPPAC_gain(i, j, k);
+			}
+		}
+	}
+
+	double list_SRPPAC_gain2[2][16][6][94]; // First index = 0 (1) means vertical (horizontal)strips, second index indicates sector, third index indicates SRPPAC index starting from FE91 and fourth index strip number starting from 0.
+	// We fill the matrix.
+	for (int h = 0; h < 2; h++)
+	{
+		for (int i = 0; i < 16; i++)
+		{
+			for (int j = 0; j < 6; j++)
+			{
+				for (int k = 0; k < 94; k++)
+				{
+					list_SRPPAC_gain2[h][i][j][k] = f_SRPPAC_gain2(h, i, j, k);
+				}
+			}
+		}
+	}
+
+	/***************************
+			 Output Tree
+	 ***************************/
+
+	// We create a new File with a  smaller Tree in which we fill the good events only.
+	// string output_new = "/home/sh12s24/art_analysis/user/carlos/output/Analysis/sharaq12_" + to_string(frun) + "new.root";
+	// TFile *ofile_new = new TFile(output_new.c_str(),"recreate");
+	// TFile *ofile_new = new TFile("/home/sh12s24/art_analysis/user/carlos/output/Analysis/902_All.root", "recreate");
+	TFile *ofile_new = new TFile("/u/ddas/software/work/artemis-oedo/output/Analysis/902_All.root", "recreate"); // for lxpool artemis installation
+	TTree *tree_new = new TTree("tree_new", "Good events sharaq12");
+
+	// We declare the variables que want to fill in the new Tree.
+	for (int k = 0; k < SRPPAC_max_ion; k++)
+	{
+		string F3_T_name = "F3_T_" + to_string(k);
+		tree_new->Branch(F3_T_name.c_str(), &F3_T[k], 320000);
+
+		string PID_T_name = "PID_T_" + to_string(k);
+		tree_new->Branch(PID_T_name.c_str(), &PID_T[k], 320000);
+
+		string FE9_X_name = "FE9_X_" + to_string(k);
+		tree_new->Branch(FE9_X_name.c_str(), &FE9_X_M2[k], 320000);
+
+		string FE9_Y_name = "FE9_Y_" + to_string(k);
+		tree_new->Branch(FE9_Y_name.c_str(), &FE9_Y_M2[k], 320000);
+
+		string FE9_A_name = "FE9_A_" + to_string(k);
+		tree_new->Branch(FE9_A_name.c_str(), &FE9_A_M2[k], 320000);
+
+		string FE9_B_name = "FE9_B_" + to_string(k);
+		tree_new->Branch(FE9_B_name.c_str(), &FE9_B_M2[k], 320000);
+
+		string Beam_T_name = "Beam_T_" + to_string(k);
+		tree_new->Branch(Beam_T_name.c_str(), &Beam_T[k], 320000);
+
+		string S0_X_name = "S0_X_" + to_string(k);
+		tree_new->Branch(S0_X_name.c_str(), &FE12_X_M2[k], 320000);
+
+		string S0_Y_name = "S0_Y_" + to_string(k);
+		tree_new->Branch(S0_Y_name.c_str(), &FE12_Y_M2[k], 320000);
+
+		string S0_A_name = "S0_A_" + to_string(k);
+		tree_new->Branch(S0_A_name.c_str(), &FE12_A_M2[k], 320000);
+
+		string S0_B_name = "S0_B_" + to_string(k);
+		tree_new->Branch(S0_B_name.c_str(), &FE12_B_M2[k], 320000);
+
+		string S1PID_T_name = "S1PID_T_" + to_string(k);
+		tree_new->Branch(S1PID_T_name.c_str(), &S1PID_T[k], 320000);
+
+		string S1_X_name = "S1_X_" + to_string(k);
+		tree_new->Branch(S1_X_name.c_str(), &S1_X_M2[k], 320000);
+
+		string S1_Y_name = "S1_Y_" + to_string(k);
+		tree_new->Branch(S1_Y_name.c_str(), &S1_Y_M2[k], 320000);
+
+		string S1_A_name = "S1_A_" + to_string(k);
+		tree_new->Branch(S1_A_name.c_str(), &S1_A_M2[k], 320000);
+
+		string S1_B_name = "S1_B_" + to_string(k);
+		tree_new->Branch(S1_B_name.c_str(), &S1_B_M2[k], 320000);
+
+		string FE9_E_name = "FE9_E_" + to_string(k);
+		tree_new->Branch(FE9_E_name.c_str(), &FE9_E[k], 320000);
+
+		string FE12_E_name = "FE12_E_" + to_string(k);
+		tree_new->Branch(FE12_E_name.c_str(), &FE12_E[k], 320000);
+
+		string S1_E_name = "S1_E_" + to_string(k);
+		tree_new->Branch(S1_E_name.c_str(), &S1_E[k], 320000);
+	}
+
+	// IC Charge Info to be stored in IC_C_ branch
+	for (int k = 0; k < 30; k++)
+	{
+		string IC_name_RAW = "IC_C_" + to_string(k);
+		tree_new->Branch(IC_name_RAW.c_str(), &IC_C_RAW[k], 320000);
+	}
+
+	// IC Energy Info to be stored in IC_E_ branch
+	for (int k = 0; k < 30; k++)
+	{
+		string IC_name_Energy = "IC_E_" + to_string(k);
+		tree_new->Branch(IC_name_Energy.c_str(), &IC_E[k], 320000);
+	}
+
+	// Calibrated/Scaled IC Energy Info to be stored in IC_E_Cal_ branch
+	for (int k = 0; k < 30; k++)
+	{
+		string IC_name_EnergyCal = "IC_E_Cal_" + to_string(k);
+		tree_new->Branch(IC_name_EnergyCal.c_str(), &IC_E_Cal[k], 320000);
+	}
+
+	/***************************
+				LOOP
+	 ***************************/
+
+	// cout << endl;
+	cout << "LOOP" << endl;
+	// cout << endl;
+
+	// Number of events in the input tree.
+	int tentries = tree->GetEntries();
+	b = tentries; // We read all the entries of the Tree.
+	// b = 500000;
+	cout << "Number of entries = " << b << endl;
+
+	// Loop over the events of the input Tree.
+	for (int i = a; i < b; i++)
+	{
+		tree->GetEntry(i);
+		if (i % 100000 == 0)
+		{
+			cout << "Event Number " << i << endl;
+		}
+
+		// We first reset the values of all variables.
+		for (int k = 0; k < SRPPAC_max_mult; k++)
+		{
+			F3_T[k] = -1000000;
+			FE91_T_I[k] = -1000000;
+			FE92_T_I[k] = -1000000;
+			FE9_T_I[k] = -1000000;
+			PID_T[k] = -1000000;
+			FE121_T_I[k] = -1000000;
+			FE122_T_I[k] = -1000000;
+			FE12_T_I[k] = -1000000;
+			Beam_T[k] = -1000000;
+			S11_T_I[k] = -1000000;
+			S12_T_I[k] = -1000000;
+			S1_T_I[k] = -1000000;
+			S1PID_T[k] = -1000000;
+
+			FE9_E[k] = -1000000;
+			FE12_E[k] = -1000000;
+			S1_E[k] = -1000000;
+
+			for (int l = 0; l < 3; l++)
+			{
+				for (int m = 0; m < SRPPAC_max_ion; m++)
+				{
+					FE91_X_I[l][k][m] = -1000000;
+					FE91_X_I_C[l][k][m] = -1000000;
+					FE91_X_I_C2[l][k][m] = -1000000;
+					FE91_Y_I[l][k][m] = -1000000;
+					FE91_Y_I_C[l][k][m] = -1000000;
+					FE91_Y_I_C2[l][k][m] = -1000000;
+					FE92_X_I[l][k][m] = -1000000;
+					FE92_X_I_C[l][k][m] = -1000000;
+					FE92_X_I_C2[l][k][m] = -1000000;
+					FE92_Y_I[l][k][m] = -1000000;
+					FE92_Y_I_C[l][k][m] = -1000000;
+					FE92_Y_I_C2[l][k][m] = -1000000;
+					FE121_X_I[l][k][m] = -1000000;
+					FE121_X_I_C[l][k][m] = -1000000;
+					FE121_X_I_C2[l][k][m] = -1000000;
+					FE121_Y_I[l][k][m] = -1000000;
+					FE121_Y_I_C[l][k][m] = -1000000;
+					FE121_Y_I_C2[l][k][m] = -1000000;
+					FE122_X_I[l][k][m] = -1000000;
+					FE122_X_I_C[l][k][m] = -1000000;
+					FE122_X_I_C2[l][k][m] = -1000000;
+					FE122_Y_I[l][k][m] = -1000000;
+					FE122_Y_I_C[l][k][m] = -1000000;
+					FE122_Y_I_C2[l][k][m] = -1000000;
+					S11_X_I[l][k][m] = -1000000;
+					S11_X_I_C[l][k][m] = -1000000;
+					S11_X_I_C2[l][k][m] = -1000000;
+					S11_Y_I[l][k][m] = -1000000;
+					S11_Y_I_C[l][k][m] = -1000000;
+					S11_Y_I_C2[l][k][m] = -1000000;
+					S12_X_I[l][k][m] = -1000000;
+					S12_X_I_C[l][k][m] = -1000000;
+					S12_X_I_C2[l][k][m] = -1000000;
+					S12_Y_I[l][k][m] = -1000000;
+					S12_Y_I_C[l][k][m] = -1000000;
+					S12_Y_I_C2[l][k][m] = -1000000;
+				}
+			}
+		}
+
+		for (int m = 0; m < SRPPAC_max_ion; m++)
+		{
+			FE91_X[m] = -1000000;
+			FE91_X_C[m] = -1000000;
+			FE91_X_C2[m] = -1000000;
+			FE91_X_M[m] = -1000000;
+			FE91_X_M2[m] = -1000000;
+			FE91_Y[m] = -1000000;
+			FE91_Y_C[m] = -1000000;
+			FE91_Y_C2[m] = -1000000;
+			FE91_Y_M[m] = -1000000;
+			FE91_Y_M2[m] = -1000000;
+			FE92_X[m] = -1000000;
+			FE92_X_C[m] = -1000000;
+			FE92_X_C2[m] = -1000000;
+			FE92_X_M[m] = -1000000;
+			FE92_X_M2[m] = -1000000;
+			FE92_Y[m] = -1000000;
+			FE92_Y_C[m] = -1000000;
+			FE92_Y_C2[m] = -1000000;
+			FE92_Y_M[m] = -1000000;
+			FE92_Y_M2[m] = -1000000;
+			FE9_X[m] = -1000000;
+			FE9_X_C[m] = -1000000;
+			FE9_X_C2[m] = -1000000;
+			FE9_X_M[m] = -1000000;
+			FE9_X_M2[m] = -1000000;
+			FE9_Y[m] = -1000000;
+			FE9_Y_C[m] = -1000000;
+			FE9_Y_C2[m] = -1000000;
+			FE9_Y_M[m] = -1000000;
+			FE9_Y_M2[m] = -1000000;
+			FE9_A[m] = -1000000;
+			FE9_A_C[m] = -1000000;
+			FE9_A_C2[m] = -1000000;
+			FE9_A_M[m] = -1000000;
+			FE9_A_M2[m] = -1000000;
+			FE9_B[m] = -1000000;
+			FE9_B_C[m] = -1000000;
+			FE9_B_C2[m] = -1000000;
+			FE9_B_M[m] = -1000000;
+			FE9_B_M2[m] = -1000000;
+			FE121_X[m] = -1000000;
+			FE121_X_C[m] = -1000000;
+			FE121_X_C2[m] = -1000000;
+			FE121_X_M[m] = -1000000;
+			FE121_X_M2[m] = -1000000;
+			FE121_Y[m] = -1000000;
+			FE121_Y_C[m] = -1000000;
+			FE121_Y_C2[m] = -1000000;
+			FE121_Y_M[m] = -1000000;
+			FE121_Y_M2[m] = -1000000;
+			FE122_X[m] = -1000000;
+			FE122_X_C[m] = -1000000;
+			FE122_X_C2[m] = -1000000;
+			FE122_X_M[m] = -1000000;
+			FE122_X_M2[m] = -1000000;
+			FE122_Y[m] = -1000000;
+			FE122_Y_C[m] = -1000000;
+			FE122_Y_C2[m] = -1000000;
+			FE122_Y_M[m] = -1000000;
+			FE122_Y_M2[m] = -1000000;
+			FE12_X[m] = -1000000;
+			FE12_X_C[m] = -1000000;
+			FE12_X_C2[m] = -1000000;
+			FE12_X_M[m] = -1000000;
+			FE12_X_M2[m] = -1000000;
+			FE12_Y[m] = -1000000;
+			FE12_Y_C[m] = -1000000;
+			FE12_Y_C2[m] = -1000000;
+			FE12_Y_M[m] = -1000000;
+			FE12_Y_M2[m] = -1000000;
+			FE12_A[m] = -1000000;
+			FE12_A_C[m] = -1000000;
+			FE12_A_C2[m] = -1000000;
+			FE12_A_M[m] = -1000000;
+			FE12_A_M2[m] = -1000000;
+			FE12_B[m] = -1000000;
+			FE12_B_C[m] = -1000000;
+			FE12_B_C2[m] = -1000000;
+			FE12_B_M[m] = -1000000;
+			FE12_B_M2[m] = -1000000;
+			S11_X[m] = -1000000;
+			S11_X_C[m] = -1000000;
+			S11_X_C2[m] = -1000000;
+			S11_X_M[m] = -1000000;
+			S11_X_M2[m] = -1000000;
+			S11_Y[m] = -1000000;
+			S11_Y_C[m] = -1000000;
+			S11_Y_C2[m] = -1000000;
+			S11_Y_M[m] = -1000000;
+			S11_Y_M2[m] = -1000000;
+			S12_X[m] = -1000000;
+			S12_X_C[m] = -1000000;
+			S12_X_C2[m] = -1000000;
+			S12_X_M[m] = -1000000;
+			S12_X_M2[m] = -1000000;
+			S12_Y[m] = -1000000;
+			S12_Y_C[m] = -1000000;
+			S12_Y_C2[m] = -1000000;
+			S12_Y_M[m] = -1000000;
+			S12_Y_M2[m] = -1000000;
+			S1_X[m] = -1000000;
+			S1_X_C[m] = -1000000;
+			S1_X_C2[m] = -1000000;
+			S1_X_M[m] = -1000000;
+			S1_X_M2[m] = -1000000;
+			S1_Y[m] = -1000000;
+			S1_Y_C[m] = -1000000;
+			S1_Y_C2[m] = -1000000;
+			S1_Y_M[m] = -1000000;
+			S1_Y_M2[m] = -1000000;
+			S1_A[m] = -1000000;
+			S1_A_C[m] = -1000000;
+			S1_A_C2[m] = -1000000;
+			S1_A_M[m] = -1000000;
+			S1_A_M2[m] = -1000000;
+			S1_B[m] = -1000000;
+			S1_B_C[m] = -1000000;
+			S1_B_C2[m] = -1000000;
+			S1_B_M[m] = -1000000;
+			S1_B_M2[m] = -1000000;
+		}
+
+		/********************************************
+		  1.- F3-FE9 Particle Identification (PID)
+		 ********************************************/
+
+		// 1.- Particle Identification (PID) of the beam through F3 CVD Diamod detector and FE9 SR-PPACs.
+
+		// From the time provided by the F3 diamond and the FE9 SRPPACs anodes we obtain the F3-FE9 ToF of the ions.
+
+		// cout << endl;
+		// cout << "F3 anode: " << array_F3_t->GetEntries() << " entries" << endl;
+
+		if (array_F3_t->GetEntries() > 0)
+		{
+			F3_E_Counter = F3_E_Counter + 1;
+			for (int k = 0; k < array_F3_t->GetEntries() && k < SRPPAC_max_ion; k++)
+			{
+				F3_Counter = F3_Counter + 1;
+				p_F3_t = (TTimingChargePositionData *)array_F3_t->At(k);
+				F3_T[k] = p_F3_t->GetTiming();
+
+				// cout << endl;
+				// cout << "Entry = " << k << endl;
+				// cout << "F3 Time = " << F3_T[k] << endl;
+			}
+		}
+
+		// cout << "F3 OK" << endl;
+
+		// cout << endl;
+		// cout << "FE91 anode: " << array_FE91_t->GetEntries() << " entries" << endl;
+
+		if (array_FE91_t->GetEntries() > 0)
+		{
+			FE91_A_E_Counter = FE91_A_E_Counter + 1;
+			for (int k = 0; k < array_FE91_t->GetEntries() && k < SRPPAC_max_ion; k++)
+			{
+				FE91_A_Counter = FE91_A_Counter + 1;
+				p_FE91_t = (TTimingChargePositionData *)array_FE91_t->At(k);
+				FE91_T_I[k] = p_FE91_t->GetTiming();
+
+				// cout << endl;
+				// cout << "Entry = " << k << endl;
+				// cout << "Time = " << FE91_T_I[k] << endl;
+			}
+		}
+
+		// cout << "FE91 Anode OK" << endl;
+
+		// cout << endl;
+		// cout << "FE92 anode: " << array_FE92_t->GetEntries() << " entries" << endl;
+
+		if (array_FE92_t->GetEntries() > 0)
+		{
+			FE92_A_E_Counter = FE92_A_E_Counter + 1;
+			for (int k = 0; k < array_FE92_t->GetEntries() && k < SRPPAC_max_ion; k++)
+			{
+				FE92_A_Counter = FE92_A_Counter + 1;
+				p_FE92_t = (TTimingChargePositionData *)array_FE92_t->At(k);
+				FE92_T_I[k] = p_FE92_t->GetTiming();
+
+				// cout << endl;
+				// cout << "Entry = " << k << endl;
+				// cout << "Time = " << FE92_T_I[k] << endl;
+			}
+		}
+
+		// cout << "FE92 Anode OK" << endl;
+
+		// cout << endl;
+		// cout << "FE9 Time: " << endl;
+
+		double FE9_T_dummy;
+		for (int j = 0; j < SRPPAC_max_ion; j++)
+		{
+			for (int k = 0; k < SRPPAC_max_ion; k++)
+			{
+				h_T_FE9A->Fill(FE92_T_I[j] - FE91_T_I[k]);
+				if (FE92_T_I[j] - FE91_T_I[k] > 5. && FE92_T_I[j] - FE91_T_I[k] < 45.) // Slow Beam.
+				{
+					FE9_A_Counter = FE9_A_Counter + 1;
+					FE9_T_dummy = (542.25 * FE92_T_I[j] - 122.5 * FE91_T_I[k]) / 419.75;
+					FE9_T_I[j] = FE9_T_dummy;
+
+					// cout << endl;
+					// cout << "FE91 Entry = " << k << ", FE92 Entry = " << j << endl;
+					// cout << "Time = " << FE9_T_I[j] << endl;
+				}
+			}
+		}
+
+		// cout << "FE9 Anode OK" << endl;
+
+		// cout << endl;
+		// cout << "PID Time: " << endl;
+
+		double FE9_E_dummy;
+		double PID_T_dummy;
+		for (int j = 0; j < SRPPAC_max_ion; j++)
+		{
+			for (int k = 0; k < SRPPAC_max_ion; k++)
+			{
+				h_T_FE9A_F3->Fill(FE9_T_I[j] - F3_T[k]);
+				if (FE9_T_I[j] - F3_T[k] > 1050. && FE9_T_I[j] - F3_T[k] < 1150.)
+				{
+					F3_FE9_A_Counter = F3_FE9_A_Counter + 1;
+					PID_T_dummy = FE9_T_I[j] - F3_T[k];
+					PID_T[k] = PID_T_dummy;
+
+					// cout << endl;
+					// cout << "F3 Entry = " << k << ", FE9 Entry = " << j << endl;
+					// cout << "PID Time = " << PID_T[k] << endl;
+
+					FE9_E_dummy = calculateBeamEnergy(PID_T[k], distance_F3_FE9);
+					FE9_E[k] = FE9_E_dummy;
+				}
+			}
+		}
+
+		// cout << "F3-FE9 Anode OK" << endl;
+
+		// cout << endl;
+		// cout << "FE91 X catode: " << array_FE91_x_cal->GetEntries() << " entries" << endl;
+
+		// We calculate the position at FE9 of the F3-FE9 ions.
+		double FE91_X_T_dummy;
+		if (array_FE91_x_cal->GetEntries() > 0)
+		{
+			FE91_X_E_Counter = FE91_X_E_Counter + 1;
+			for (int k = 0; k < array_FE91_x_cal->GetEntries() && k < 50; k++)
+			{
+				FE91_X_Counter = FE91_X_Counter + 1;
+				p_FE91_x_cal = (TTimingChargePositionData *)array_FE91_x_cal->At(k);
+				FE91_X_T_dummy = p_FE91_x_cal->GetTiming();
+
+				for (int m = 0; m < array_FE91_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_FE91X_F3->Fill(FE91_X_T_dummy - F3_T[m]);
+					// h_T_FE91X_F3_Event->Fill(i,FE91_X_T_dummy - F3_T[m]);
+					if (FE91_X_T_dummy - F3_T[m] > 1000 && FE91_X_T_dummy - F3_T[m] < 1200)
+					{
+						if (FE91_X_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (FE91_X_I[0][l - 1][m] != -1000000 && FE91_X_I[0][l][m] == -1000000 && FE91_X_I[1][l - 1][m] != p_FE91_x_cal->GetTiming())
+								{
+									FE91_XA_Counter = FE91_XA_Counter + 1;
+									FE91_X_I[0][l][m] = p_FE91_x_cal->GetID();
+									FE91_X_I[1][l][m] = p_FE91_x_cal->GetTiming();
+									FE91_X_I[2][l][m] = p_FE91_x_cal->GetCharge();
+
+									FE91_X_I_C[0][l][m] = FE91_X_I[0][l][m];
+									FE91_X_I_C[1][l][m] = FE91_X_I[1][l][m];
+									FE91_X_I_C[2][l][m] = FE91_X_I[2][l][m] * (FE91_X_factor / list_SRPPAC_gain[1][0][int(FE91_X_I[0][l][m])]);
+
+									// cout << endl;
+									// cout << "Entry = " << k << endl;
+									// cout << "Ion (Multiplicity) = " << m << endl;
+									// cout << "ID = " << FE91_X_I[0][l][m]  << endl;
+									// cout << "Time = " << FE91_X_I[1][l][m]  << endl;
+									// cout << "Charge = " << FE91_X_I[2][l][m]  << endl;
+									// cout << "ID (C) = " << FE91_X_I_C[0][l][m]  << endl;
+									// cout << "Time (C) = " << FE91_X_I_C[1][l][m]  << endl;
+									// cout << "Charge (C) = " << FE91_X_I_C[2][l][m]  << endl;
+								}
+							}
+						}
+
+						if (FE91_X_I[0][0][m] == -1000000)
+						{
+							FE91_XA_E_Counter = FE91_XA_E_Counter + 1;
+							FE91_X_I[0][0][m] = p_FE91_x_cal->GetID();
+							FE91_X_I[1][0][m] = p_FE91_x_cal->GetTiming();
+							FE91_X_I[2][0][m] = p_FE91_x_cal->GetCharge();
+
+							FE91_X_I_C[0][0][m] = FE91_X_I[0][0][m];
+							FE91_X_I_C[1][0][m] = FE91_X_I[1][0][m];
+							FE91_X_I_C[2][0][m] = FE91_X_I[2][0][m] * (FE91_X_factor / list_SRPPAC_gain[1][0][int(FE91_X_I[0][0][m])]);
+
+							// cout << endl;
+							// cout << "Entry = " << k << endl;
+							// cout << "Ion (Multiplicity) = " << m << endl;
+							// cout << "ID = " << FE91_X_I[0][0][m]  << endl;
+							// cout << "Time = " << FE91_X_I[1][0][m]  << endl;
+							// cout << "Charge = " << FE91_X_I[2][0][m]  << endl;
+							// cout << "ID (C) = " << FE91_X_I_C[0][0][m]  << endl;
+							// cout << "Time (C) = " << FE91_X_I_C[1][0][m]  << endl;
+							// cout << "Charge (C) = " << FE91_X_I_C[2][0][m]  << endl;
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE91_X_I_C);
+
+		////cout << "FE91 X OK" << endl;
+
+		// cout << endl;
+		// cout << "FE91 Y catode: " << array_FE91_y_cal->GetEntries() << " entries" << endl;
+
+		double FE91_Y_T_dummy;
+		if (array_FE91_y_cal->GetEntries() > 0)
+		{
+			FE91_Y_E_Counter = FE91_Y_E_Counter + 1;
+			for (int k = 0; k < array_FE91_y_cal->GetEntries() && k < 50; k++)
+			{
+				FE91_Y_Counter = FE91_Y_Counter + 1;
+				p_FE91_y_cal = (TTimingChargePositionData *)array_FE91_y_cal->At(k);
+				FE91_Y_T_dummy = p_FE91_y_cal->GetTiming();
+
+				for (int m = 0; m < array_FE91_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_FE91Y_F3->Fill(FE91_Y_T_dummy - F3_T[m]);
+					if (FE91_Y_T_dummy - F3_T[m] > 1000 && FE91_Y_T_dummy - F3_T[m] < 1200)
+					{
+						if (FE91_Y_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (FE91_Y_I[0][l - 1][m] != -1000000 && FE91_Y_I[0][l][m] == -1000000 && FE91_Y_I[1][l - 1][m] != p_FE91_y_cal->GetTiming())
+								{
+									FE91_YA_Counter = FE91_YA_Counter + 1;
+									FE91_Y_I[0][l][m] = p_FE91_y_cal->GetID();
+									FE91_Y_I[1][l][m] = p_FE91_y_cal->GetTiming();
+									FE91_Y_I[2][l][m] = p_FE91_y_cal->GetCharge();
+
+									FE91_Y_I_C[0][l][m] = FE91_Y_I[0][l][m];
+									FE91_Y_I_C[1][l][m] = FE91_Y_I[1][l][m];
+									FE91_Y_I_C[2][l][m] = FE91_Y_I[2][l][m] * (FE91_Y_factor / list_SRPPAC_gain[0][0][int(FE91_Y_I[0][l][m])]);
+
+									// cout << endl;
+									// cout << "Entry = " << k << endl;
+									// cout << "Ion (Multiplicity) = " << m << endl;
+									// cout << "ID = " << FE91_Y_I[0][l][m]  << endl;
+									// cout << "Time = " << FE91_Y_I[1][l][m]  << endl;
+									// cout << "Charge = " << FE91_Y_I[2][l][m]  << endl;
+									// cout << "ID (C) = " << FE91_Y_I_C[0][l][m]  << endl;
+									// cout << "Time (C) = " << FE91_Y_I_C[1][l][m]  << endl;
+									// cout << "Charge (C) = " << FE91_Y_I_C[2][l][m]  << endl;
+								}
+							}
+						}
+
+						if (FE91_Y_I[0][0][m] == -1000000)
+						{
+							FE91_YA_E_Counter = FE91_YA_E_Counter + 1;
+							FE91_Y_I[0][0][m] = p_FE91_y_cal->GetID();
+							FE91_Y_I[1][0][m] = p_FE91_y_cal->GetTiming();
+							FE91_Y_I[2][0][m] = p_FE91_y_cal->GetCharge();
+
+							FE91_Y_I_C[0][0][m] = FE91_Y_I[0][0][m];
+							FE91_Y_I_C[1][0][m] = FE91_Y_I[1][0][m];
+							FE91_Y_I_C[2][0][m] = FE91_Y_I[2][0][m] * (FE91_Y_factor / list_SRPPAC_gain[0][0][int(FE91_Y_I[0][0][m])]);
+
+							// cout << endl;
+							// cout << "Entry = " << k << endl;
+							// cout << "Ion (Multiplicity) = " << m << endl;
+							// cout << "ID = " << FE91_Y_I[0][0][m]  << endl;
+							// cout << "Time = " << FE91_Y_I[1][0][m]  << endl;
+							// cout << "Charge = " << FE91_Y_I[2][0][m]  << endl;
+							// cout << "ID (C) = " << FE91_Y_I_C[0][0][m]  << endl;
+							// cout << "Time (C) = " << FE91_Y_I_C[1][0][m]  << endl;
+							// cout << "Charge (C) = " << FE91_Y_I_C[2][0][m]  << endl;
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE91_Y_I_C);
+
+		// cout << "FE91 Y OK" << endl;
+
+		// cout << endl;
+		// cout << "FE91 Y (C2): " << endl;
+
+		for (int k = 0; k < array_FE91_x_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_FE91_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (FE91_X_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_FE91_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(FE91_X_I_C[0][0][m] - FE91_Y_I_C[0][0][l]) < 50)
+						{
+							FE91_XY_Counter = FE91_XY_Counter + 1;
+							FE91_X_I_C2[0][k][m] = FE91_X_I_C[0][k][m];
+							FE91_X_I_C2[1][k][m] = FE91_X_I_C[1][k][m];
+							FE91_X_I_C2[2][k][m] = FE91_X_I_C[2][k][m] * (FE91_X_factor / list_SRPPAC_gain2[1][int(FE91_Y_I_C[0][0][l] / 4)][0][int(FE91_X_I_C[0][k][m])]);
+
+							// cout << endl;
+							// cout << "Entry = " << k << endl;
+							// cout << "Ion (Multiplicity) = " << m << endl;
+							// cout << "ID = " << FE91_X_I_C2[0][0][m]  << endl;
+							// cout << "Time = " << FE91_X_I_C2[1][0][m]  << endl;
+							// cout << "Charge = " << FE91_X_I_C2[2][0][m]  << endl;
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE91_X_I_C2);
+
+		// cout << "FE91 X_C2 OK" << endl;
+
+		for (int k = 0; k < array_FE91_y_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_FE91_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (FE91_Y_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_FE91_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(FE91_Y_I_C[0][0][m] - FE91_X_I_C[0][0][l]) < 50)
+						{
+							FE91_YX_Counter = FE91_YX_Counter + 1;
+							FE91_Y_I_C2[0][k][m] = FE91_Y_I_C[0][k][m];
+							FE91_Y_I_C2[1][k][m] = FE91_Y_I_C[1][k][m];
+							FE91_Y_I_C2[2][k][m] = FE91_Y_I_C[2][k][m] * (FE91_Y_factor / list_SRPPAC_gain2[0][int(FE91_X_I_C[0][0][l] / 6)][0][int(FE91_Y_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE91_Y_I_C2);
+
+		// cout << "FE91 Y_C2 OK" << endl;
+
+		for (int m = 0; m < array_FE91_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE91_X_I_C2[2][1][m] > 0 && abs(FE91_X_I_C2[0][0][m] - FE91_X_I_C2[0][1][m]) == 1)
+			{
+				h_FE91_h_Q0_Q1->Fill(FE91_X_I_C2[2][0][m] - FE91_X_I_C2[2][1][m]);
+				h_FE91_h_Q0_Q1_S[int(FE91_X_I_C2[0][0][m])][int(FE91_X_I_C2[0][1][m])]->Fill(FE91_X_I_C2[2][0][m] - FE91_X_I_C2[2][1][m]);
+
+				FE91_X_Q_Counter = FE91_X_Q_Counter + 1;
+				double FE91_X_up = 0.;
+				double FE91_X_down = 0.;
+				double FE91_X_up_C = 0.;
+				double FE91_X_down_C = 0.;
+				double FE91_X_up_C2 = 0.;
+				double FE91_X_down_C2 = 0.;
+				for (int k = 0; k < array_FE91_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE91_X_I[2][k][m]))
+						continue;
+					FE91_X_up = FE91_X_up + FE91_X_I[0][k][m] * FE91_X_I[2][k][m];
+					FE91_X_down = FE91_X_down + FE91_X_I[2][k][m];
+				}
+				for (int k = 0; k < array_FE91_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE91_X_I_C[2][k][m]))
+						continue;
+					FE91_X_up_C = FE91_X_up_C + FE91_X_I_C[0][k][m] * FE91_X_I_C[2][k][m];
+					FE91_X_down_C = FE91_X_down_C + FE91_X_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_FE91_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE91_X_I_C2[2][k][m]))
+						continue;
+					FE91_X_up_C2 = FE91_X_up_C2 + FE91_X_I_C2[0][k][m] * FE91_X_I_C2[2][k][m];
+					FE91_X_down_C2 = FE91_X_down_C2 + FE91_X_I_C2[2][k][m];
+				}
+
+				FE91_X[m] = -((FE91_X_up / FE91_X_down) * (240. / 94.) + 2.55 / 2. - 120);
+				FE91_X_C[m] = -((FE91_X_up_C / FE91_X_down_C) * (240. / 94.) + 2.55 / 2. - 120);
+				FE91_X_C2[m] = -((FE91_X_up_C2 / FE91_X_down_C2) * (240. / 94.) + 2.55 / 2. - 120);
+
+				if (FE91_X_I_C2[0][0][m] > FE91_X_I_C2[0][1][m])
+				{
+					FE91_X_M[m] = -((FE91_X_I_C2[0][0][m] - (1 - h_FE91_h_Q0_Q1_F->GetBinContent(int((FE91_X_I_C2[2][0][m] - FE91_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (FE91_X_I_C2[0][0][m] < FE91_X_I_C2[0][1][m])
+				{
+					FE91_X_M[m] = -((FE91_X_I_C2[0][0][m] + (1 - h_FE91_h_Q0_Q1_F->GetBinContent(int((FE91_X_I_C2[2][0][m] - FE91_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (FE91_X_I_C2[0][0][m] > FE91_X_I_C2[0][1][m])
+				{
+					FE91_X_M2[m] = -((FE91_X_I_C2[0][0][m] - (1 - h_FE91_h_Q0_Q1_S_F[int(FE91_X_I_C2[0][0][m])][int(FE91_X_I_C2[0][1][m])]->GetBinContent(int((FE91_X_I_C2[2][0][m] - FE91_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (FE91_X_I_C2[0][0][m] < FE91_X_I_C2[0][1][m])
+				{
+					FE91_X_M2[m] = -((FE91_X_I_C2[0][0][m] + (1 - h_FE91_h_Q0_Q1_S_F[int(FE91_X_I_C2[0][0][m])][int(FE91_X_I_C2[0][1][m])]->GetBinContent(int((FE91_X_I_C2[2][0][m] - FE91_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+			}
+		}
+
+		// cout << "FE91 X_M2 OK" << endl;
+
+		for (int m = 0; m < array_FE91_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE91_Y_I_C2[2][1][m] > 0 && abs(FE91_Y_I_C2[0][0][m] - FE91_Y_I_C2[0][1][m]) == 1)
+			{
+				h_FE91_v_Q0_Q1->Fill(FE91_Y_I_C2[2][0][m] - FE91_Y_I_C2[2][1][m]);
+				h_FE91_v_Q0_Q1_S[int(FE91_Y_I_C2[0][0][m])][int(FE91_Y_I_C2[0][1][m])]->Fill(FE91_Y_I_C2[2][0][m] - FE91_Y_I_C2[2][1][m]);
+
+				FE91_Y_Q_Counter = FE91_Y_Q_Counter + 1;
+				double FE91_Y_up = 0.;
+				double FE91_Y_down = 0.;
+				double FE91_Y_up_C = 0.;
+				double FE91_Y_down_C = 0.;
+				double FE91_Y_up_C2 = 0.;
+				double FE91_Y_down_C2 = 0.;
+				for (int k = 0; k < array_FE91_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE91_Y_I[2][k][m]))
+						continue;
+					FE91_Y_up = FE91_Y_up + FE91_Y_I[0][k][m] * FE91_Y_I[2][k][m];
+					FE91_Y_down = FE91_Y_down + FE91_Y_I[2][k][m];
+				}
+				for (int k = 0; k < array_FE91_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE91_Y_I_C[2][k][m]))
+						continue;
+					FE91_Y_up_C = FE91_Y_up_C + FE91_Y_I_C[0][k][m] * FE91_Y_I_C[2][k][m];
+					FE91_Y_down_C = FE91_Y_down_C + FE91_Y_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_FE91_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE91_Y_I_C2[2][k][m]))
+						continue;
+					FE91_Y_up_C2 = FE91_Y_up_C2 + FE91_Y_I_C2[0][k][m] * FE91_Y_I_C2[2][k][m];
+					FE91_Y_down_C2 = FE91_Y_down_C2 + FE91_Y_I_C2[2][k][m];
+				}
+
+				FE91_Y[m] = -((FE91_Y_up / FE91_Y_down) * (150. / 58.) + 2.58 / 2. - 75);
+				FE91_Y_C[m] = -((FE91_Y_up_C / FE91_Y_down_C) * (150. / 58.) + 2.58 / 2. - 75);
+				FE91_Y_C2[m] = -((FE91_Y_up_C2 / FE91_Y_down_C2) * (150. / 58.) + 2.58 / 2. - 75);
+
+				if (FE91_Y_I_C2[0][0][m] > FE91_Y_I_C2[0][1][m])
+				{
+					FE91_Y_M[m] = -((FE91_Y_I_C2[0][0][m] - (1 - h_FE91_v_Q0_Q1_F->GetBinContent(int((FE91_Y_I_C2[2][0][m] - FE91_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (FE91_Y_I_C2[0][0][m] < FE91_Y_I_C2[0][1][m])
+				{
+					FE91_Y_M[m] = -((FE91_Y_I_C2[0][0][m] + (1 - h_FE91_v_Q0_Q1_F->GetBinContent(int((FE91_Y_I_C2[2][0][m] - FE91_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (FE91_Y_I_C2[0][0][m] > FE91_Y_I_C2[0][1][m])
+				{
+					FE91_Y_M2[m] = -((FE91_Y_I_C2[0][0][m] - (1 - h_FE91_v_Q0_Q1_S_F[int(FE91_Y_I_C2[0][0][m])][int(FE91_Y_I_C2[0][1][m])]->GetBinContent(int((FE91_Y_I_C2[2][0][m] - FE91_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (FE91_Y_I_C2[0][0][m] < FE91_Y_I_C2[0][1][m])
+				{
+					FE91_Y_M2[m] = -((FE91_Y_I_C2[0][0][m] + (1 - h_FE91_v_Q0_Q1_S_F[int(FE91_Y_I_C2[0][0][m])][int(FE91_Y_I_C2[0][1][m])]->GetBinContent(int((FE91_Y_I_C2[2][0][m] - FE91_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+			}
+		}
+
+		// cout << "FE91 Y_M2 OK" << endl;
+
+		double FE92_X_T_dummy;
+		if (array_FE92_x_cal->GetEntries() > 0)
+		{
+			FE92_X_E_Counter = FE92_X_E_Counter + 1;
+			for (int k = 0; k < array_FE92_x_cal->GetEntries() && k < 50; k++)
+			{
+				FE92_X_Counter = FE92_X_Counter + 1;
+				p_FE92_x_cal = (TTimingChargePositionData *)array_FE92_x_cal->At(k);
+				FE92_X_T_dummy = p_FE92_x_cal->GetTiming();
+
+				for (int m = 0; m < array_FE92_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_FE92X_F3->Fill(FE92_X_T_dummy - F3_T[m]);
+					if (FE92_X_T_dummy - F3_T[m] > 1000 && FE92_X_T_dummy - F3_T[m] < 1200)
+					{
+						if (FE92_X_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (FE92_X_I[0][l - 1][m] != -1000000 && FE92_X_I[0][l][m] == -1000000 && FE92_X_I[1][l - 1][m] != p_FE92_x_cal->GetTiming())
+								{
+									FE92_XA_Counter = FE92_XA_Counter + 1;
+									FE92_X_I[0][l][m] = p_FE92_x_cal->GetID();
+									FE92_X_I[1][l][m] = p_FE92_x_cal->GetTiming();
+									FE92_X_I[2][l][m] = p_FE92_x_cal->GetCharge();
+
+									FE92_X_I_C[0][l][m] = FE92_X_I[0][l][m];
+									FE92_X_I_C[1][l][m] = FE92_X_I[1][l][m];
+									FE92_X_I_C[2][l][m] = FE92_X_I[2][l][m] * (FE92_X_factor / list_SRPPAC_gain[1][1][int(FE92_X_I[0][l][m])]);
+								}
+							}
+						}
+
+						if (FE92_X_I[0][0][m] == -1000000)
+						{
+							FE92_XA_E_Counter = FE92_XA_E_Counter + 1;
+							FE92_X_I[0][0][m] = p_FE92_x_cal->GetID();
+							FE92_X_I[1][0][m] = p_FE92_x_cal->GetTiming();
+							FE92_X_I[2][0][m] = p_FE92_x_cal->GetCharge();
+
+							FE92_X_I_C[0][0][m] = FE92_X_I[0][0][m];
+							FE92_X_I_C[1][0][m] = FE92_X_I[1][0][m];
+							FE92_X_I_C[2][0][m] = FE92_X_I[2][0][m] * (FE92_X_factor / list_SRPPAC_gain[1][1][int(FE92_X_I[0][0][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE92_X_I_C);
+
+		// cout << "FE92 X OK" << endl;
+
+		double FE92_Y_T_dummy;
+		if (array_FE92_y_cal->GetEntries() > 0)
+		{
+			FE92_Y_E_Counter = FE92_Y_E_Counter + 1;
+			for (int k = 0; k < array_FE92_y_cal->GetEntries() && k < 50; k++)
+			{
+				FE92_Y_Counter = FE92_Y_Counter + 1;
+				p_FE92_y_cal = (TTimingChargePositionData *)array_FE92_y_cal->At(k);
+				FE92_Y_T_dummy = p_FE92_y_cal->GetTiming();
+
+				for (int m = 0; m < array_FE92_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_FE92Y_F3->Fill(FE92_Y_T_dummy - F3_T[m]);
+					if (FE92_Y_T_dummy - F3_T[m] > 1000 && FE92_Y_T_dummy - F3_T[m] < 1200)
+					{
+						if (FE92_Y_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (FE92_Y_I[0][l - 1][m] != -1000000 && FE92_Y_I[0][l][m] == -1000000 && FE92_Y_I[1][l - 1][m] != p_FE92_y_cal->GetTiming())
+								{
+									FE92_YA_Counter = FE92_YA_Counter + 1;
+									FE92_Y_I[0][l][m] = p_FE92_y_cal->GetID();
+									FE92_Y_I[1][l][m] = p_FE92_y_cal->GetTiming();
+									FE92_Y_I[2][l][m] = p_FE92_y_cal->GetCharge();
+
+									FE92_Y_I_C[0][l][m] = FE92_Y_I[0][l][m];
+									FE92_Y_I_C[1][l][m] = FE92_Y_I[1][l][m];
+									FE92_Y_I_C[2][l][m] = FE92_Y_I[2][l][m] * (FE92_Y_factor / list_SRPPAC_gain[0][1][int(FE92_Y_I[0][l][m])]);
+								}
+							}
+						}
+
+						if (FE92_Y_I[0][0][m] == -1000000)
+						{
+							FE92_YA_E_Counter = FE92_YA_E_Counter + 1;
+							FE92_Y_I[0][0][m] = p_FE92_y_cal->GetID();
+							FE92_Y_I[1][0][m] = p_FE92_y_cal->GetTiming();
+							FE92_Y_I[2][0][m] = p_FE92_y_cal->GetCharge();
+
+							FE92_Y_I_C[0][0][m] = FE92_Y_I[0][0][m];
+							FE92_Y_I_C[1][0][m] = FE92_Y_I[1][0][m];
+							FE92_Y_I_C[2][0][m] = FE92_Y_I[2][0][m] * (FE92_Y_factor / list_SRPPAC_gain[0][1][int(FE92_Y_I[0][0][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE92_Y_I_C);
+
+		// cout << "FE92 Y OK" << endl;
+
+		for (int k = 0; k < array_FE92_x_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_FE92_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (FE92_X_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_FE92_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(FE92_X_I_C[0][0][m] - FE92_Y_I_C[0][0][l]) < 50)
+						{
+							FE92_XY_Counter = FE92_XY_Counter + 1;
+							FE92_X_I_C2[0][k][m] = FE92_X_I_C[0][k][m];
+							FE92_X_I_C2[1][k][m] = FE92_X_I_C[1][k][m];
+							FE92_X_I_C2[2][k][m] = FE92_X_I_C[2][k][m] * (FE92_X_factor / list_SRPPAC_gain2[1][int(FE92_Y_I_C[0][0][l] / 4)][1][int(FE92_X_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE92_X_I_C2);
+
+		// cout << "FE92 X_C2 OK" << endl;
+
+		for (int k = 0; k < array_FE92_y_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_FE92_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (FE92_Y_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_FE92_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(FE92_Y_I_C[0][0][m] - FE92_X_I_C[0][0][l]) < 50)
+						{
+							FE92_YX_Counter = FE92_YX_Counter + 1;
+							FE92_Y_I_C2[0][k][m] = FE92_Y_I_C[0][k][m];
+							FE92_Y_I_C2[1][k][m] = FE92_Y_I_C[1][k][m];
+							FE92_Y_I_C2[2][k][m] = FE92_Y_I_C[2][k][m] * (FE92_Y_factor / list_SRPPAC_gain2[0][int(FE92_X_I_C[0][0][l] / 6)][1][int(FE92_Y_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE92_Y_I_C2);
+
+		// cout << "FE92 Y_C2 OK" << endl;
+
+		for (int m = 0; m < array_FE92_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE92_X_I_C2[2][1][m] > 0 && abs(FE92_X_I_C2[0][0][m] - FE92_X_I_C2[0][1][m]) == 1)
+			{
+				h_FE92_h_Q0_Q1->Fill(FE92_X_I_C2[2][0][m] - FE92_X_I_C2[2][1][m]);
+				h_FE92_h_Q0_Q1_S[int(FE92_X_I_C2[0][0][m])][int(FE92_X_I_C2[0][1][m])]->Fill(FE92_X_I_C2[2][0][m] - FE92_X_I_C2[2][1][m]);
+
+				FE92_X_Q_Counter = FE92_X_Q_Counter + 1;
+				double FE92_X_up = 0.;
+				double FE92_X_down = 0.;
+				double FE92_X_up_C = 0.;
+				double FE92_X_down_C = 0.;
+				double FE92_X_up_C2 = 0.;
+				double FE92_X_down_C2 = 0.;
+				for (int k = 0; k < array_FE92_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE92_X_I[2][k][m]))
+						continue;
+					FE92_X_up = FE92_X_up + FE92_X_I[0][k][m] * FE92_X_I[2][k][m];
+					FE92_X_down = FE92_X_down + FE92_X_I[2][k][m];
+				}
+				for (int k = 0; k < array_FE92_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE92_X_I_C[2][k][m]))
+						continue;
+					FE92_X_up_C = FE92_X_up_C + FE92_X_I_C[0][k][m] * FE92_X_I_C[2][k][m];
+					FE92_X_down_C = FE92_X_down_C + FE92_X_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_FE92_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE92_X_I_C2[2][k][m]))
+						continue;
+					FE92_X_up_C2 = FE92_X_up_C2 + FE92_X_I_C2[0][k][m] * FE92_X_I_C2[2][k][m];
+					FE92_X_down_C2 = FE92_X_down_C2 + FE92_X_I_C2[2][k][m];
+				}
+
+				FE92_X[m] = -((FE92_X_up / FE92_X_down) * (240. / 94.) + 2.55 / 2. - 120);
+				FE92_X_C[m] = -((FE92_X_up_C / FE92_X_down_C) * (240. / 94.) + 2.55 / 2. - 120);
+				FE92_X_C2[m] = -((FE92_X_up_C2 / FE92_X_down_C2) * (240. / 94.) + 2.55 / 2. - 120);
+
+				if (FE92_X_I_C2[0][0][m] > FE92_X_I_C2[0][1][m])
+				{
+					FE92_X_M[m] = -((FE92_X_I_C2[0][0][m] - (1 - h_FE92_h_Q0_Q1_F->GetBinContent(int((FE92_X_I_C2[2][0][m] - FE92_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (FE92_X_I_C2[0][0][m] < FE92_X_I_C2[0][1][m])
+				{
+					FE92_X_M[m] = -((FE92_X_I_C2[0][0][m] + (1 - h_FE92_h_Q0_Q1_F->GetBinContent(int((FE92_X_I_C2[2][0][m] - FE92_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (FE92_X_I_C2[0][0][m] > FE92_X_I_C2[0][1][m])
+				{
+					FE92_X_M2[m] = -((FE92_X_I_C2[0][0][m] - (1 - h_FE92_h_Q0_Q1_S_F[int(FE92_X_I_C2[0][0][m])][int(FE92_X_I_C2[0][1][m])]->GetBinContent(int((FE92_X_I_C2[2][0][m] - FE92_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (FE92_X_I_C2[0][0][m] < FE92_X_I_C2[0][1][m])
+				{
+					FE92_X_M2[m] = -((FE92_X_I_C2[0][0][m] + (1 - h_FE92_h_Q0_Q1_S_F[int(FE92_X_I_C2[0][0][m])][int(FE92_X_I_C2[0][1][m])]->GetBinContent(int((FE92_X_I_C2[2][0][m] - FE92_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+			}
+		}
+
+		// cout << "FE92 X_M2 OK" << endl;
+
+		for (int m = 0; m < array_FE92_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE92_Y_I_C2[2][1][m] > 0 && abs(FE92_Y_I_C2[0][0][m] - FE92_Y_I_C2[0][1][m]) == 1)
+			{
+				h_FE92_v_Q0_Q1->Fill(FE92_Y_I_C2[2][0][m] - FE92_Y_I_C2[2][1][m]);
+				h_FE92_v_Q0_Q1_S[int(FE92_Y_I_C2[0][0][m])][int(FE92_Y_I_C2[0][1][m])]->Fill(FE92_Y_I_C2[2][0][m] - FE92_Y_I_C2[2][1][m]);
+
+				FE92_Y_Q_Counter = FE92_Y_Q_Counter + 1;
+				double FE92_Y_up = 0.;
+				double FE92_Y_down = 0.;
+				double FE92_Y_up_C = 0.;
+				double FE92_Y_down_C = 0.;
+				double FE92_Y_up_C2 = 0.;
+				double FE92_Y_down_C2 = 0.;
+				for (int k = 0; k < array_FE92_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE92_Y_I[2][k][m]))
+						continue;
+					FE92_Y_up = FE92_Y_up + FE92_Y_I[0][k][m] * FE92_Y_I[2][k][m];
+					FE92_Y_down = FE92_Y_down + FE92_Y_I[2][k][m];
+				}
+				for (int k = 0; k < array_FE92_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE92_Y_I_C[2][k][m]))
+						continue;
+					FE92_Y_up_C = FE92_Y_up_C + FE92_Y_I_C[0][k][m] * FE92_Y_I_C[2][k][m];
+					FE92_Y_down_C = FE92_Y_down_C + FE92_Y_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_FE92_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE92_Y_I_C2[2][k][m]))
+						continue;
+					FE92_Y_up_C2 = FE92_Y_up_C2 + FE92_Y_I_C2[0][k][m] * FE92_Y_I_C2[2][k][m];
+					FE92_Y_down_C2 = FE92_Y_down_C2 + FE92_Y_I_C2[2][k][m];
+				}
+
+				FE92_Y[m] = -((FE92_Y_up / FE92_Y_down) * (150. / 58.) + 2.58 / 2. - 75);
+				FE92_Y_C[m] = -((FE92_Y_up_C / FE92_Y_down_C) * (150. / 58.) + 2.58 / 2. - 75);
+				FE92_Y_C2[m] = -((FE92_Y_up_C2 / FE92_Y_down_C2) * (150. / 58.) + 2.58 / 2. - 75);
+
+				if (FE92_Y_I_C2[0][0][m] > FE92_Y_I_C2[0][1][m])
+				{
+					FE92_Y_M[m] = -((FE92_Y_I_C2[0][0][m] - (1 - h_FE92_v_Q0_Q1_F->GetBinContent(int((FE92_Y_I_C2[2][0][m] - FE92_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (FE92_Y_I_C2[0][0][m] < FE92_Y_I_C2[0][1][m])
+				{
+					FE92_Y_M[m] = -((FE92_Y_I_C2[0][0][m] + (1 - h_FE92_v_Q0_Q1_F->GetBinContent(int((FE92_Y_I_C2[2][0][m] - FE92_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (FE92_Y_I_C2[0][0][m] > FE92_Y_I_C2[0][1][m])
+				{
+					FE92_Y_M2[m] = -((FE92_Y_I_C2[0][0][m] - (1 - h_FE92_v_Q0_Q1_S_F[int(FE92_Y_I_C2[0][0][m])][int(FE92_Y_I_C2[0][1][m])]->GetBinContent(int((FE92_Y_I_C2[2][0][m] - FE92_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (FE92_Y_I_C2[0][0][m] < FE92_Y_I_C2[0][1][m])
+				{
+					FE92_Y_M2[m] = -((FE92_Y_I_C2[0][0][m] + (1 - h_FE92_v_Q0_Q1_S_F[int(FE92_Y_I_C2[0][0][m])][int(FE92_Y_I_C2[0][1][m])]->GetBinContent(int((FE92_Y_I_C2[2][0][m] - FE92_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+			}
+		}
+
+		// cout << "FE92 Y_M2 OK" << endl;
+
+		for (int m = 0; m < SRPPAC_max_ion; m++)
+		{
+			if (PID_T[m] > 0)
+			{
+
+				FE9_X[m] = (542.25 * FE91_X[m] - 122.5 * FE92_X[m]) / 419.75;
+				FE9_X_C[m] = (542.25 * FE91_X_C[m] - 122.5 * FE92_X_C[m]) / 419.75;
+				FE9_X_C2[m] = (542.25 * FE91_X_C2[m] - 122.5 * FE92_X_C2[m]) / 419.75;
+				FE9_X_M[m] = (542.25 * FE91_X_M[m] - 122.5 * FE92_X_M[m]) / 419.75;
+				FE9_X_M2[m] = (542.25 * FE91_X_M2[m] - 122.5 * FE92_X_M2[m]) / 419.75;
+
+				FE9_Y[m] = (542.25 * FE91_Y[m] - 122.5 * FE92_Y[m]) / 419.75;
+				FE9_Y_C[m] = (542.25 * FE91_Y_C[m] - 122.5 * FE92_Y_C[m]) / 419.75;
+				FE9_Y_C2[m] = (542.25 * FE91_Y_C2[m] - 122.5 * FE92_Y_C2[m]) / 419.75;
+				FE9_Y_M[m] = (542.25 * FE91_Y_M[m] - 122.5 * FE92_Y_M[m]) / 419.75;
+				FE9_Y_M2[m] = (542.25 * FE91_Y_M2[m] - 122.5 * FE92_Y_M2[m]) / 419.75;
+
+				FE9_A[m] = atan((FE92_X[m] - FE91_X[m]) / FE9_Z);
+				FE9_A_C[m] = atan((FE92_X_C[m] - FE91_X_C[m]) / FE9_Z);
+				FE9_A_C2[m] = atan((FE92_X_C2[m] - FE91_X_C2[m]) / FE9_Z);
+				FE9_A_M[m] = atan((FE92_X_M[m] - FE91_X_M[m]) / FE9_Z);
+				FE9_A_M2[m] = atan((FE92_X_M2[m] - FE91_X_M2[m]) / FE9_Z);
+
+				FE9_B[m] = atan((FE92_Y[m] - FE91_Y[m]) / FE9_Z);
+				FE9_B_C[m] = atan((FE92_Y_C[m] - FE91_Y_C[m]) / FE9_Z);
+				FE9_B_C2[m] = atan((FE92_Y_C2[m] - FE91_Y_C2[m]) / FE9_Z);
+				FE9_B_M[m] = atan((FE92_Y_M[m] - FE91_Y_M[m]) / FE9_Z);
+				FE9_B_M2[m] = atan((FE92_Y_M2[m] - FE91_Y_M2[m]) / FE9_Z);
+			}
+		}
+
+		// cout << "FE9 OK" << endl;
+
+		/*****************************************
+		   2.- Position and energy of interacion
+		 *****************************************/
+
+		// cout << endl;
+		// cout << "FE12" << endl;
+		// cout << endl;
+
+		// From the time provided by the FE9 and FE12 SRPPACs anodes we obtain the FE9-FE12 ToF of the ions.
+
+		if (array_FE121_t->GetEntries() > 0)
+		{
+			FE121_A_E_Counter = FE121_A_E_Counter + 1;
+			for (int k = 0; k < array_FE121_t->GetEntries() && k < SRPPAC_max_ion; k++)
+			{
+				FE121_A_Counter = FE121_A_Counter + 1;
+				p_FE121_t = (TTimingChargePositionData *)array_FE121_t->At(k);
+				FE121_T_I[k] = p_FE121_t->GetTiming();
+			}
+		}
+
+		if (array_FE122_t->GetEntries() > 0)
+		{
+			FE122_A_E_Counter = FE122_A_E_Counter + 1;
+			for (int k = 0; k < array_FE122_t->GetEntries() && k < SRPPAC_max_ion; k++)
+			{
+				FE122_A_Counter = FE122_A_Counter + 1;
+				p_FE122_t = (TTimingChargePositionData *)array_FE122_t->At(k);
+				FE122_T_I[k] = p_FE122_t->GetTiming();
+			}
+		}
+
+		double FE12_T_dummy;
+		for (int j = 0; j < SRPPAC_max_ion; j++)
+		{
+			for (int k = 0; k < SRPPAC_max_ion; k++)
+			{
+				h_T_FE12A->Fill(FE122_T_I[j] - FE121_T_I[k]);
+				// if (FE122_T_I[j] - FE121_T_I[k] > -10. && FE122_T_I[j] - FE121_T_I[k] < 10. && FE122_T_I[j] != -1000000 && FE121_T_I[k] != -1000000)//Fast Beam.
+				if (FE122_T_I[j] - FE121_T_I[k] > -15. && FE122_T_I[j] - FE121_T_I[k] < 15. && FE122_T_I[j] != -1000000 && FE121_T_I[k] != -1000000) // Slow Beam.
+				{
+					FE12_A_Counter = FE12_A_Counter + 1;
+					FE12_T_dummy = (FE122_T_I[j] + FE121_T_I[k]) / 2.;
+					FE12_T_I[j] = FE12_T_dummy;
+					// cout << FE12_T_dummy  << endl;
+				}
+			}
+		}
+
+		double FE12_E_dummy;
+		double Beam_T_dummy;
+		for (int j = 0; j < SRPPAC_max_ion; j++)
+		{
+			for (int k = 0; k < SRPPAC_max_ion; k++)
+			{
+				h_T_FE12A_F3->Fill(FE12_T_I[j] - F3_T[k]);
+				// if (FE12_T_I[j] - F3_T[k] > 1900. && FE12_T_I[j] - F3_T[k] < 2100.) //Fast Beam.
+				if (FE12_T_I[j] - F3_T[k] > 1900. && FE12_T_I[j] - F3_T[k] < 2200.) // Slow Beam.
+				{
+					F3_FE12_A_Counter = F3_FE12_A_Counter + 1;
+					Beam_T_dummy = FE12_T_I[j] - PID_T[k] - F3_T[k] - 715.279;
+					Beam_T[k] = Beam_T_dummy;
+					// cout << Beam_T[k] << endl;
+
+					FE12_E_dummy = calculateBeamEnergy(Beam_T[k] + 22.2, distance_FE9_FE12); // 22.2 ns is the TOF offset for Beam_T_0
+					FE12_E[k] = FE12_E_dummy;
+				}
+			}
+		}
+
+		// We calculate the position at FE9 of the F3-FE9 ions.
+		double FE121_X_T_dummy;
+		if (array_FE121_x_cal->GetEntries() > 0)
+		{
+			FE121_X_E_Counter = FE121_X_E_Counter + 1;
+			for (int k = 0; k < array_FE121_x_cal->GetEntries() && k < 50; k++)
+			{
+				FE121_X_Counter = FE121_X_Counter + 1;
+				p_FE121_x_cal = (TTimingChargePositionData *)array_FE121_x_cal->At(k);
+				FE121_X_T_dummy = p_FE121_x_cal->GetTiming();
+
+				for (int m = 0; m < array_FE121_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_FE121X_F3->Fill(FE121_X_T_dummy - F3_T[m]);
+					// if (FE121_X_T_dummy - F3_T[m] > 1850 && FE121_X_T_dummy - F3_T[m] < 2100) //Fast Beam.
+					if (FE121_X_T_dummy - F3_T[m] > 1900 && FE121_X_T_dummy - F3_T[m] < 2300) // Slow Beam.
+					{
+						if (FE121_X_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (FE121_X_I[0][l - 1][m] != -1000000 && FE121_X_I[0][l][m] == -1000000 && FE121_X_I[1][l - 1][m] != p_FE121_x_cal->GetTiming())
+								{
+									FE121_XA_Counter = FE121_XA_Counter + 1;
+									FE121_X_I[0][l][m] = p_FE121_x_cal->GetID();
+									FE121_X_I[1][l][m] = p_FE121_x_cal->GetTiming();
+									FE121_X_I[2][l][m] = p_FE121_x_cal->GetCharge();
+
+									FE121_X_I_C[0][l][m] = FE121_X_I[0][l][m];
+									FE121_X_I_C[1][l][m] = FE121_X_I[1][l][m];
+									FE121_X_I_C[2][l][m] = FE121_X_I[2][l][m] * (FE121_X_factor / list_SRPPAC_gain[1][2][int(FE121_X_I[0][l][m])]);
+								}
+							}
+						}
+
+						if (FE121_X_I[0][0][m] == -1000000)
+						{
+							FE121_XA_E_Counter = FE121_XA_E_Counter + 1;
+							FE121_X_I[0][0][m] = p_FE121_x_cal->GetID();
+							FE121_X_I[1][0][m] = p_FE121_x_cal->GetTiming();
+							FE121_X_I[2][0][m] = p_FE121_x_cal->GetCharge();
+
+							FE121_X_I_C[0][0][m] = FE121_X_I[0][0][m];
+							FE121_X_I_C[1][0][m] = FE121_X_I[1][0][m];
+							FE121_X_I_C[2][0][m] = FE121_X_I[2][0][m] * (FE121_X_factor / list_SRPPAC_gain[1][2][int(FE121_X_I[0][0][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE121_X_I_C);
+
+		double FE121_Y_T_dummy;
+		if (array_FE121_y_cal->GetEntries() > 0)
+		{
+			FE121_Y_E_Counter = FE121_Y_E_Counter + 1;
+			for (int k = 0; k < array_FE121_y_cal->GetEntries() && k < 50; k++)
+			{
+				FE121_Y_Counter = FE121_Y_Counter + 1;
+				p_FE121_y_cal = (TTimingChargePositionData *)array_FE121_y_cal->At(k);
+				FE121_Y_T_dummy = p_FE121_y_cal->GetTiming();
+
+				for (int m = 0; m < array_FE121_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_FE121Y_F3->Fill(FE121_Y_T_dummy - F3_T[m]);
+					// if (FE121_Y_T_dummy - F3_T[m] > 1850 && FE121_Y_T_dummy - F3_T[m] < 2100) //Fast Beam.
+					if (FE121_Y_T_dummy - F3_T[m] > 1900 && FE121_Y_T_dummy - F3_T[m] < 2300) // Slow Beam.
+					{
+						if (FE121_Y_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (FE121_Y_I[0][l - 1][m] != -1000000 && FE121_Y_I[0][l][m] == -1000000 && FE121_Y_I[1][l - 1][m] != p_FE121_y_cal->GetTiming())
+								{
+									FE121_YA_Counter = FE121_YA_Counter + 1;
+									FE121_Y_I[0][l][m] = p_FE121_y_cal->GetID();
+									FE121_Y_I[1][l][m] = p_FE121_y_cal->GetTiming();
+									FE121_Y_I[2][l][m] = p_FE121_y_cal->GetCharge();
+
+									FE121_Y_I_C[0][l][m] = FE121_Y_I[0][l][m];
+									FE121_Y_I_C[1][l][m] = FE121_Y_I[1][l][m];
+									FE121_Y_I_C[2][l][m] = FE121_Y_I[2][l][m] * (FE121_Y_factor / list_SRPPAC_gain[0][2][int(FE121_Y_I[0][l][m])]);
+								}
+							}
+						}
+
+						if (FE121_Y_I[0][0][m] == -1000000)
+						{
+							FE121_YA_E_Counter = FE121_YA_E_Counter + 1;
+							FE121_Y_I[0][0][m] = p_FE121_y_cal->GetID();
+							FE121_Y_I[1][0][m] = p_FE121_y_cal->GetTiming();
+							FE121_Y_I[2][0][m] = p_FE121_y_cal->GetCharge();
+
+							FE121_Y_I_C[0][0][m] = FE121_Y_I[0][0][m];
+							FE121_Y_I_C[1][0][m] = FE121_Y_I[1][0][m];
+							FE121_Y_I_C[2][0][m] = FE121_Y_I[2][0][m] * (FE121_Y_factor / list_SRPPAC_gain[0][2][int(FE121_Y_I[0][0][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE121_Y_I_C);
+
+		for (int k = 0; k < array_FE121_x_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_FE121_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (FE121_X_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_FE121_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(FE121_X_I_C[0][0][m] - FE121_Y_I_C[0][0][l]) < 90)
+						{
+							FE121_XY_Counter = FE121_XY_Counter + 1;
+							FE121_X_I_C2[0][k][m] = FE121_X_I_C[0][k][m];
+							FE121_X_I_C2[1][k][m] = FE121_X_I_C[1][k][m];
+							FE121_X_I_C2[2][k][m] = FE121_X_I_C[2][k][m] * (FE121_X_factor / list_SRPPAC_gain2[1][int(FE121_Y_I_C[0][0][l] / 4)][2][int(FE121_X_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE121_X_I_C2);
+
+		for (int k = 0; k < array_FE121_y_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_FE121_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (FE121_Y_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_FE121_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(FE121_Y_I_C[0][0][m] - FE121_X_I_C[0][0][l]) < 90)
+						{
+							FE121_YX_Counter = FE121_YX_Counter + 1;
+							FE121_Y_I_C2[0][k][m] = FE121_Y_I_C[0][k][m];
+							FE121_Y_I_C2[1][k][m] = FE121_Y_I_C[1][k][m];
+							FE121_Y_I_C2[2][k][m] = FE121_Y_I_C[2][k][m] * (FE121_Y_factor / list_SRPPAC_gain2[0][int(FE121_X_I_C[0][0][l] / 6)][2][int(FE121_Y_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE121_Y_I_C2);
+
+		for (int m = 0; m < array_FE121_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE121_X_I_C2[2][1][m] > 0 && abs(FE121_X_I_C2[0][0][m] - FE121_X_I_C2[0][1][m]) == 1)
+			{
+				h_FE121_h_Q0_Q1->Fill(FE121_X_I_C2[2][0][m] - FE121_X_I_C2[2][1][m]);
+				h_FE121_h_Q0_Q1_S[int(FE121_X_I_C2[0][0][m])][int(FE121_X_I_C2[0][1][m])]->Fill(FE121_X_I_C2[2][0][m] - FE121_X_I_C2[2][1][m]);
+
+				FE121_X_Q_Counter = FE121_X_Q_Counter + 1;
+				double FE121_X_up = 0.;
+				double FE121_X_down = 0.;
+				double FE121_X_up_C = 0.;
+				double FE121_X_down_C = 0.;
+				double FE121_X_up_C2 = 0.;
+				double FE121_X_down_C2 = 0.;
+				for (int k = 0; k < array_FE121_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE121_X_I[2][k][m]))
+						continue;
+					FE121_X_up = FE121_X_up + FE121_X_I[0][k][m] * FE121_X_I[2][k][m];
+					FE121_X_down = FE121_X_down + FE121_X_I[2][k][m];
+				}
+				for (int k = 0; k < array_FE121_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE121_X_I_C[2][k][m]))
+						continue;
+					FE121_X_up_C = FE121_X_up_C + FE121_X_I_C[0][k][m] * FE121_X_I_C[2][k][m];
+					FE121_X_down_C = FE121_X_down_C + FE121_X_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_FE121_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE121_X_I_C2[2][k][m]))
+						continue;
+					FE121_X_up_C2 = FE121_X_up_C2 + FE121_X_I_C2[0][k][m] * FE121_X_I_C2[2][k][m];
+					FE121_X_down_C2 = FE121_X_down_C2 + FE121_X_I_C2[2][k][m];
+				}
+
+				FE121_X[m] = -((FE121_X_up / FE121_X_down) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				FE121_X_C[m] = -((FE121_X_up_C / FE121_X_down_C) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				FE121_X_C2[m] = -((FE121_X_up_C2 / FE121_X_down_C2) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+
+				if (FE121_X_I_C2[0][0][m] > FE121_X_I_C2[0][1][m])
+				{
+					FE121_X_M[m] = -((FE121_X_I_C2[0][0][m] - (1 - h_FE121_h_Q0_Q1_F->GetBinContent(int((FE121_X_I_C2[2][0][m] - FE121_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				}
+
+				if (FE121_X_I_C2[0][0][m] < FE121_X_I_C2[0][1][m])
+				{
+					FE121_X_M[m] = -((FE121_X_I_C2[0][0][m] + (1 - h_FE121_h_Q0_Q1_F->GetBinContent(int((FE121_X_I_C2[2][0][m] - FE121_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				}
+
+				if (FE121_X_I_C2[0][0][m] > FE121_X_I_C2[0][1][m])
+				{
+					FE121_X_M2[m] = -((FE121_X_I_C2[0][0][m] - (1 - h_FE121_h_Q0_Q1_S_F[int(FE121_X_I_C2[0][0][m])][int(FE121_X_I_C2[0][1][m])]->GetBinContent(int((FE121_X_I_C2[2][0][m] - FE121_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				}
+
+				if (FE121_X_I_C2[0][0][m] < FE121_X_I_C2[0][1][m])
+				{
+					FE121_X_M2[m] = -((FE121_X_I_C2[0][0][m] + (1 - h_FE121_h_Q0_Q1_S_F[int(FE121_X_I_C2[0][0][m])][int(FE121_X_I_C2[0][1][m])]->GetBinContent(int((FE121_X_I_C2[2][0][m] - FE121_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE121_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE121_Y_I_C2[2][1][m] > 0 && abs(FE121_Y_I_C2[0][0][m] - FE121_Y_I_C2[0][1][m]) == 1)
+			{
+				h_FE121_v_Q0_Q1->Fill(FE121_Y_I_C2[2][0][m] - FE121_Y_I_C2[2][1][m]);
+				h_FE121_v_Q0_Q1_S[int(FE121_Y_I_C2[0][0][m])][int(FE121_Y_I_C2[0][1][m])]->Fill(FE121_Y_I_C2[2][0][m] - FE121_Y_I_C2[2][1][m]);
+
+				FE121_Y_Q_Counter = FE121_Y_Q_Counter + 1;
+				double FE121_Y_up = 0.;
+				double FE121_Y_down = 0.;
+				double FE121_Y_up_C = 0.;
+				double FE121_Y_down_C = 0.;
+				double FE121_Y_up_C2 = 0.;
+				double FE121_Y_down_C2 = 0.;
+				for (int k = 0; k < array_FE121_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE121_Y_I[2][k][m]))
+						continue;
+					FE121_Y_up = FE121_Y_up + FE121_Y_I[0][k][m] * FE121_Y_I[2][k][m];
+					FE121_Y_down = FE121_Y_down + FE121_Y_I[2][k][m];
+				}
+				for (int k = 0; k < array_FE121_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE121_Y_I_C[2][k][m]))
+						continue;
+					FE121_Y_up_C = FE121_Y_up_C + FE121_Y_I_C[0][k][m] * FE121_Y_I_C[2][k][m];
+					FE121_Y_down_C = FE121_Y_down_C + FE121_Y_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_FE121_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE121_Y_I_C2[2][k][m]))
+						continue;
+					FE121_Y_up_C2 = FE121_Y_up_C2 + FE121_Y_I_C2[0][k][m] * FE121_Y_I_C2[2][k][m];
+					FE121_Y_down_C2 = FE121_Y_down_C2 + FE121_Y_I_C2[2][k][m];
+				}
+
+				FE121_Y[m] = -((FE121_Y_up / FE121_Y_down) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				FE121_Y_C[m] = -((FE121_Y_up_C / FE121_Y_down_C) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				FE121_Y_C2[m] = -((FE121_Y_up_C2 / FE121_Y_down_C2) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+
+				if (FE121_Y_I_C2[0][0][m] > FE121_Y_I_C2[0][1][m])
+				{
+					FE121_Y_M[m] = -((FE121_Y_I_C2[0][0][m] - (1 - h_FE121_v_Q0_Q1_F->GetBinContent(int((FE121_Y_I_C2[2][0][m] - FE121_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				}
+
+				if (FE121_Y_I_C2[0][0][m] < FE121_Y_I_C2[0][1][m])
+				{
+					FE121_Y_M[m] = -((FE121_Y_I_C2[0][0][m] + (1 - h_FE121_v_Q0_Q1_F->GetBinContent(int((FE121_Y_I_C2[2][0][m] - FE121_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				}
+
+				if (FE121_Y_I_C2[0][0][m] > FE121_Y_I_C2[0][1][m])
+				{
+					FE121_Y_M2[m] = -((FE121_Y_I_C2[0][0][m] - (1 - h_FE121_v_Q0_Q1_S_F[int(FE121_Y_I_C2[0][0][m])][int(FE121_Y_I_C2[0][1][m])]->GetBinContent(int((FE121_Y_I_C2[2][0][m] - FE121_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				}
+
+				if (FE121_Y_I_C2[0][0][m] < FE121_Y_I_C2[0][1][m])
+				{
+					FE121_Y_M2[m] = -((FE121_Y_I_C2[0][0][m] + (1 - h_FE121_v_Q0_Q1_S_F[int(FE121_Y_I_C2[0][0][m])][int(FE121_Y_I_C2[0][1][m])]->GetBinContent(int((FE121_Y_I_C2[2][0][m] - FE121_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				}
+			}
+		}
+
+		double FE122_X_T_dummy;
+		if (array_FE122_x_cal->GetEntries() > 0)
+		{
+			FE122_X_E_Counter = FE122_X_E_Counter + 1;
+			for (int k = 0; k < array_FE122_x_cal->GetEntries() && k < 50; k++)
+			{
+				FE122_X_Counter = FE122_X_Counter + 1;
+				p_FE122_x_cal = (TTimingChargePositionData *)array_FE122_x_cal->At(k);
+				FE122_X_T_dummy = p_FE122_x_cal->GetTiming();
+
+				for (int m = 0; m < array_FE122_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_FE122X_F3->Fill(FE122_X_T_dummy - F3_T[m]);
+					// if (FE122_X_T_dummy - F3_T[m] > 1850 && FE122_X_T_dummy - F3_T[m] < 2050)//Fast Beam.
+					if (FE122_X_T_dummy - F3_T[m] > 1900 && FE122_X_T_dummy - F3_T[m] < 2300) // Slow Beam.
+					{
+						if (FE122_X_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (FE122_X_I[0][l - 1][m] != -1000000 && FE122_X_I[0][l][m] == -1000000 && FE122_X_I[1][l - 1][m] != p_FE122_x_cal->GetTiming())
+								{
+									FE122_XA_Counter = FE122_XA_Counter + 1;
+									FE122_X_I[0][l][m] = p_FE122_x_cal->GetID();
+									FE122_X_I[1][l][m] = p_FE122_x_cal->GetTiming();
+									FE122_X_I[2][l][m] = p_FE122_x_cal->GetCharge();
+
+									FE122_X_I_C[0][l][m] = FE122_X_I[0][l][m];
+									FE122_X_I_C[1][l][m] = FE122_X_I[1][l][m];
+									FE122_X_I_C[2][l][m] = FE122_X_I[2][l][m] * (FE122_X_factor / list_SRPPAC_gain[1][3][int(FE122_X_I[0][l][m])]);
+								}
+							}
+						}
+
+						if (FE122_X_I[0][0][m] == -1000000)
+						{
+							FE122_XA_E_Counter = FE122_XA_E_Counter + 1;
+							FE122_X_I[0][0][m] = p_FE122_x_cal->GetID();
+							FE122_X_I[1][0][m] = p_FE122_x_cal->GetTiming();
+							FE122_X_I[2][0][m] = p_FE122_x_cal->GetCharge();
+
+							FE122_X_I_C[0][0][m] = FE122_X_I[0][0][m];
+							FE122_X_I_C[1][0][m] = FE122_X_I[1][0][m];
+							FE122_X_I_C[2][0][m] = FE122_X_I[2][0][m] * (FE122_X_factor / list_SRPPAC_gain[1][3][int(FE122_X_I[0][0][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE122_X_I_C);
+
+		double FE122_Y_T_dummy;
+		if (array_FE122_y_cal->GetEntries() > 0)
+		{
+			FE122_Y_E_Counter = FE122_Y_E_Counter + 1;
+			for (int k = 0; k < array_FE122_y_cal->GetEntries() && k < 50; k++)
+			{
+				FE122_Y_Counter = FE122_Y_Counter + 1;
+				p_FE122_y_cal = (TTimingChargePositionData *)array_FE122_y_cal->At(k);
+				FE122_Y_T_dummy = p_FE122_y_cal->GetTiming();
+
+				for (int m = 0; m < array_FE122_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_FE122Y_F3->Fill(FE122_Y_T_dummy - F3_T[m]);
+					// if (FE122_Y_T_dummy - F3_T[m] > 1850 && FE122_Y_T_dummy - F3_T[m] < 2100)//Fast Beam.
+					if (FE122_Y_T_dummy - F3_T[m] > 1900 && FE122_Y_T_dummy - F3_T[m] < 2300) // Slow Beam.
+					{
+						if (FE122_Y_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (FE122_Y_I[0][l - 1][m] != -1000000 && FE122_Y_I[0][l][m] == -1000000 && FE122_Y_I[1][l - 1][m] != p_FE122_y_cal->GetTiming())
+								{
+									FE122_YA_Counter = FE122_YA_Counter + 1;
+									FE122_Y_I[0][l][m] = p_FE122_y_cal->GetID();
+									FE122_Y_I[1][l][m] = p_FE122_y_cal->GetTiming();
+									FE122_Y_I[2][l][m] = p_FE122_y_cal->GetCharge();
+
+									FE122_Y_I_C[0][l][m] = FE122_Y_I[0][l][m];
+									FE122_Y_I_C[1][l][m] = FE122_Y_I[1][l][m];
+									FE122_Y_I_C[2][l][m] = FE122_Y_I[2][l][m] * (FE122_Y_factor / list_SRPPAC_gain[0][3][int(FE122_Y_I[0][l][m])]);
+								}
+							}
+						}
+
+						if (FE122_Y_I[0][0][m] == -1000000)
+						{
+							FE122_YA_E_Counter = FE122_YA_E_Counter + 1;
+							FE122_Y_I[0][0][m] = p_FE122_y_cal->GetID();
+							FE122_Y_I[1][0][m] = p_FE122_y_cal->GetTiming();
+							FE122_Y_I[2][0][m] = p_FE122_y_cal->GetCharge();
+
+							FE122_Y_I_C[0][0][m] = FE122_Y_I[0][0][m];
+							FE122_Y_I_C[1][0][m] = FE122_Y_I[1][0][m];
+							FE122_Y_I_C[2][0][m] = FE122_Y_I[2][0][m] * (FE122_Y_factor / list_SRPPAC_gain[0][3][int(FE122_Y_I[0][0][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE122_Y_I_C);
+
+		for (int k = 0; k < array_FE122_x_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_FE122_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (FE122_X_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_FE122_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(FE122_X_I_C[0][0][m] - FE122_Y_I_C[0][0][l]) < 90)
+						{
+							FE122_XY_Counter = FE122_XY_Counter + 1;
+							FE122_X_I_C2[0][k][m] = FE122_X_I_C[0][k][m];
+							FE122_X_I_C2[1][k][m] = FE122_X_I_C[1][k][m];
+							FE122_X_I_C2[2][k][m] = FE122_X_I_C[2][k][m] * (FE122_X_factor / list_SRPPAC_gain2[1][int(FE122_Y_I_C[0][0][l] / 4)][3][int(FE122_X_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE122_X_I_C2);
+
+		for (int k = 0; k < array_FE122_y_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_FE122_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (FE122_Y_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_FE122_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(FE122_Y_I_C[0][0][m] - FE122_X_I_C[0][0][l]) < 90)
+						{
+							FE122_YX_Counter = FE122_YX_Counter + 1;
+							FE122_Y_I_C2[0][k][m] = FE122_Y_I_C[0][k][m];
+							FE122_Y_I_C2[1][k][m] = FE122_Y_I_C[1][k][m];
+							FE122_Y_I_C2[2][k][m] = FE122_Y_I_C[2][k][m] * (FE122_Y_factor / list_SRPPAC_gain2[0][int(FE122_X_I_C[0][0][l] / 6)][3][int(FE122_Y_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(FE122_Y_I_C2);
+
+		for (int m = 0; m < array_FE122_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE122_X_I_C2[2][1][m] > 0 && abs(FE122_X_I_C2[0][0][m] - FE122_X_I_C2[0][1][m]) == 1)
+			{
+				h_FE122_h_Q0_Q1->Fill(FE122_X_I_C2[2][0][m] - FE122_X_I_C2[2][1][m]);
+				h_FE122_h_Q0_Q1_S[int(FE122_X_I_C2[0][0][m])][int(FE122_X_I_C2[0][1][m])]->Fill(FE122_X_I_C2[2][0][m] - FE122_X_I_C2[2][1][m]);
+
+				FE122_X_Q_Counter = FE122_X_Q_Counter + 1;
+				double FE122_X_up = 0.;
+				double FE122_X_down = 0.;
+				double FE122_X_up_C = 0.;
+				double FE122_X_down_C = 0.;
+				double FE122_X_up_C2 = 0.;
+				double FE122_X_down_C2 = 0.;
+				for (int k = 0; k < array_FE122_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE122_X_I[2][k][m]))
+						continue;
+					FE122_X_up = FE122_X_up + FE122_X_I[0][k][m] * FE122_X_I[2][k][m];
+					FE122_X_down = FE122_X_down + FE122_X_I[2][k][m];
+				}
+				for (int k = 0; k < array_FE122_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE122_X_I_C[2][k][m]))
+						continue;
+					FE122_X_up_C = FE122_X_up_C + FE122_X_I_C[0][k][m] * FE122_X_I_C[2][k][m];
+					FE122_X_down_C = FE122_X_down_C + FE122_X_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_FE122_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE122_X_I_C2[2][k][m]))
+						continue;
+					FE122_X_up_C2 = FE122_X_up_C2 + FE122_X_I_C2[0][k][m] * FE122_X_I_C2[2][k][m];
+					FE122_X_down_C2 = FE122_X_down_C2 + FE122_X_I_C2[2][k][m];
+				}
+
+				FE122_X[m] = -((FE122_X_up / FE122_X_down) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				FE122_X_C[m] = -((FE122_X_up_C / FE122_X_down_C) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				FE122_X_C2[m] = -((FE122_X_up_C2 / FE122_X_down_C2) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+
+				if (FE122_X_I_C2[0][0][m] > FE122_X_I_C2[0][1][m])
+				{
+					FE122_X_M[m] = -((FE122_X_I_C2[0][0][m] - (1 - h_FE122_h_Q0_Q1_F->GetBinContent(int((FE122_X_I_C2[2][0][m] - FE122_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				}
+
+				if (FE122_X_I_C2[0][0][m] < FE122_X_I_C2[0][1][m])
+				{
+					FE122_X_M[m] = -((FE122_X_I_C2[0][0][m] + (1 - h_FE122_h_Q0_Q1_F->GetBinContent(int((FE122_X_I_C2[2][0][m] - FE122_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				}
+
+				if (FE122_X_I_C2[0][0][m] > FE122_X_I_C2[0][1][m])
+				{
+					FE122_X_M2[m] = -((FE122_X_I_C2[0][0][m] - (1 - h_FE122_h_Q0_Q1_S_F[int(FE122_X_I_C2[0][0][m])][int(FE122_X_I_C2[0][1][m])]->GetBinContent(int((FE122_X_I_C2[2][0][m] - FE122_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				}
+
+				if (FE122_X_I_C2[0][0][m] < FE122_X_I_C2[0][1][m])
+				{
+					FE122_X_M2[m] = -((FE122_X_I_C2[0][0][m] + (1 - h_FE122_h_Q0_Q1_S_F[int(FE122_X_I_C2[0][0][m])][int(FE122_X_I_C2[0][1][m])]->GetBinContent(int((FE122_X_I_C2[2][0][m] - FE122_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120) + 50;
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE122_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE122_Y_I_C2[2][1][m] > 0 && abs(FE122_Y_I_C2[0][0][m] - FE122_Y_I_C2[0][1][m]) == 1)
+			{
+				h_FE122_v_Q0_Q1->Fill(FE122_Y_I_C2[2][0][m] - FE122_Y_I_C2[2][1][m]);
+				h_FE122_v_Q0_Q1_S[int(FE122_Y_I_C2[0][0][m])][int(FE122_Y_I_C2[0][1][m])]->Fill(FE122_Y_I_C2[2][0][m] - FE122_Y_I_C2[2][1][m]);
+
+				FE122_Y_Q_Counter = FE122_Y_Q_Counter + 1;
+				double FE122_Y_up = 0.;
+				double FE122_Y_down = 0.;
+				double FE122_Y_up_C = 0.;
+				double FE122_Y_down_C = 0.;
+				double FE122_Y_up_C2 = 0.;
+				double FE122_Y_down_C2 = 0.;
+				for (int k = 0; k < array_FE122_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE122_Y_I[2][k][m]))
+						continue;
+					FE122_Y_up = FE122_Y_up + FE122_Y_I[0][k][m] * FE122_Y_I[2][k][m];
+					FE122_Y_down = FE122_Y_down + FE122_Y_I[2][k][m];
+				}
+				for (int k = 0; k < array_FE122_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE122_Y_I_C[2][k][m]))
+						continue;
+					FE122_Y_up_C = FE122_Y_up_C + FE122_Y_I_C[0][k][m] * FE122_Y_I_C[2][k][m];
+					FE122_Y_down_C = FE122_Y_down_C + FE122_Y_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_FE122_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(FE122_Y_I_C2[2][k][m]))
+						continue;
+					FE122_Y_up_C2 = FE122_Y_up_C2 + FE122_Y_I_C2[0][k][m] * FE122_Y_I_C2[2][k][m];
+					FE122_Y_down_C2 = FE122_Y_down_C2 + FE122_Y_I_C2[2][k][m];
+				}
+
+				FE122_Y[m] = -((FE122_Y_up / FE122_Y_down) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				FE122_Y_C[m] = -((FE122_Y_up_C / FE122_Y_down_C) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				FE122_Y_C2[m] = -((FE122_Y_up_C2 / FE122_Y_down_C2) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+
+				if (FE122_Y_I_C2[0][0][m] > FE122_Y_I_C2[0][1][m])
+				{
+					FE122_Y_M[m] = -((FE122_Y_I_C2[0][0][m] - (1 - h_FE122_v_Q0_Q1_F->GetBinContent(int((FE122_Y_I_C2[2][0][m] - FE122_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				}
+
+				if (FE122_Y_I_C2[0][0][m] < FE122_Y_I_C2[0][1][m])
+				{
+					FE122_Y_M[m] = -((FE122_Y_I_C2[0][0][m] + (1 - h_FE122_v_Q0_Q1_F->GetBinContent(int((FE122_Y_I_C2[2][0][m] - FE122_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				}
+
+				if (FE122_Y_I_C2[0][0][m] > FE122_Y_I_C2[0][1][m])
+				{
+					FE122_Y_M2[m] = -((FE122_Y_I_C2[0][0][m] - (1 - h_FE122_v_Q0_Q1_S_F[int(FE122_Y_I_C2[0][0][m])][int(FE122_Y_I_C2[0][1][m])]->GetBinContent(int((FE122_Y_I_C2[2][0][m] - FE122_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				}
+
+				if (FE122_Y_I_C2[0][0][m] < FE122_Y_I_C2[0][1][m])
+				{
+					FE122_Y_M2[m] = -((FE122_Y_I_C2[0][0][m] + (1 - h_FE122_v_Q0_Q1_S_F[int(FE122_Y_I_C2[0][0][m])][int(FE122_Y_I_C2[0][1][m])]->GetBinContent(int((FE122_Y_I_C2[2][0][m] - FE122_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75) - 30;
+				}
+			}
+		}
+
+		for (int m = 0; m < SRPPAC_max_ion; m++)
+		{
+			if (Beam_T[m] > 0)
+			{
+
+				FE12_A[m] = atan((FE122_X[m] - FE121_X[m]) / FE12_Z);
+				FE12_A_C[m] = atan((FE122_X_C[m] - FE121_X_C[m]) / FE12_Z);
+				FE12_A_C2[m] = atan((FE122_X_C2[m] - FE121_X_C2[m]) / FE12_Z);
+				FE12_A_M[m] = atan((FE122_X_M[m] - FE121_X_M[m]) / FE12_Z);
+				FE12_A_M2[m] = atan((FE122_X_M2[m] - FE121_X_M2[m]) / FE12_Z);
+
+				FE12_B[m] = atan((FE122_Y[m] - FE121_Y[m]) / FE12_Z);
+				FE12_B_C[m] = atan((FE122_Y_C[m] - FE121_Y_C[m]) / FE12_Z);
+				FE12_B_C2[m] = atan((FE122_Y_C2[m] - FE121_Y_C2[m]) / FE12_Z);
+				FE12_B_M[m] = atan((FE122_Y_M[m] - FE121_Y_M[m]) / FE12_Z);
+				FE12_B_M2[m] = atan((FE122_Y_M2[m] - FE121_Y_M2[m]) / FE12_Z);
+
+				FE12_X[m] = FE12_S0 * tan(FE12_A[m]) + FE121_X[m];
+				FE12_X_C[m] = FE12_S0 * tan(FE12_A_C[m]) + FE121_X_C[m];
+				FE12_X_C2[m] = FE12_S0 * tan(FE12_A_C2[m]) + FE121_X_C2[m];
+				FE12_X_M[m] = FE12_S0 * tan(FE12_A_M[m]) + FE121_X_M[m];
+				FE12_X_M2[m] = FE12_S0 * tan(FE12_A_M2[m]) + FE121_X_M2[m];
+
+				FE12_Y[m] = FE12_S0 * tan(FE12_B[m]) + FE121_Y[m];
+				FE12_Y_C[m] = FE12_S0 * tan(FE12_B_C[m]) + FE121_Y_C[m];
+				FE12_Y_C2[m] = FE12_S0 * tan(FE12_B_C2[m]) + FE121_Y_C2[m];
+				FE12_Y_M[m] = FE12_S0 * tan(FE12_B_M[m]) + FE121_Y_M[m];
+				FE12_Y_M2[m] = FE12_S0 * tan(FE12_B_M2[m]) + FE121_Y_M2[m];
+			}
+		}
+
+		// cout << "FE12 OK" << endl;
+
+		/**********************************
+			  3.- Recoil Identification.
+		***********************************/
+
+		// cout << endl;
+		// cout << "S1" << endl;
+		// cout << endl;
+
+		// From the time provided by the FE12 and S1 SRPPACs anodes we obtain the FE12-S1 ToF of the ions.
+
+		double S11_X_T_dummy;
+		if (array_S11_x_cal->GetEntries() > 0)
+		{
+			S11_X_E_Counter = S11_X_E_Counter + 1;
+			for (int k = 0; k < array_S11_x_cal->GetEntries() && k < 50; k++)
+			{
+				S11_X_Counter = S11_X_Counter + 1;
+				p_S11_x_cal = (TTimingChargePositionData *)array_S11_x_cal->At(k);
+				S11_X_T_dummy = p_S11_x_cal->GetTiming();
+
+				for (int m = 0; m < array_S11_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_S11X_F3->Fill(S11_X_T_dummy - F3_T[m]);
+					// if (S11_X_T_dummy - F3_T[m] > 1780 && S11_X_T_dummy - F3_T[m] < 1900) //Fast Beam.
+					if (S11_X_T_dummy - F3_T[m] > 1900 && S11_X_T_dummy - F3_T[m] < 2300) // Slow Beam.
+					{
+						if (S11_X_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (S11_X_I[0][l - 1][m] != -1000000 && S11_X_I[0][l][m] == -1000000 && S11_X_I[1][l - 1][m] != p_S11_x_cal->GetTiming())
+								{
+									S11_XA_Counter = S11_XA_Counter + 1;
+									S11_X_I[0][l][m] = p_S11_x_cal->GetID();
+									S11_X_I[1][l][m] = p_S11_x_cal->GetTiming();
+									S11_X_I[2][l][m] = p_S11_x_cal->GetCharge();
+
+									S11_X_I_C[0][l][m] = S11_X_I[0][l][m];
+									S11_X_I_C[1][l][m] = S11_X_I[1][l][m];
+									S11_X_I_C[2][l][m] = S11_X_I[2][l][m] * (S11_X_factor / list_SRPPAC_gain[1][4][int(S11_X_I[0][l][m])]);
+								}
+							}
+						}
+
+						if (S11_X_I[0][0][m] == -1000000)
+						{
+							S11_XA_E_Counter = S11_XA_E_Counter + 1;
+							S11_X_I[0][0][m] = p_S11_x_cal->GetID();
+							S11_X_I[1][0][m] = p_S11_x_cal->GetTiming();
+							S11_X_I[2][0][m] = p_S11_x_cal->GetCharge();
+
+							S11_X_I_C[0][0][m] = S11_X_I[0][0][m];
+							S11_X_I_C[1][0][m] = S11_X_I[1][0][m];
+							S11_X_I_C[2][0][m] = S11_X_I[2][0][m] * (S11_X_factor / list_SRPPAC_gain[1][4][int(S11_X_I[0][0][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(S11_X_I_C);
+
+		// We calculate the position at FE9 of the F3-FE9 ions.
+		double S11_Y_T_dummy;
+		if (array_S11_y_cal->GetEntries() > 0)
+		{
+			S11_Y_E_Counter = S11_Y_E_Counter + 1;
+			for (int k = 0; k < array_S11_y_cal->GetEntries() && k < 50; k++)
+			{
+				S11_Y_Counter = S11_Y_Counter + 1;
+				p_S11_y_cal = (TTimingChargePositionData *)array_S11_y_cal->At(k);
+				S11_Y_T_dummy = p_S11_y_cal->GetTiming();
+
+				for (int m = 0; m < array_S11_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_S11Y_F3->Fill(S11_Y_T_dummy - F3_T[m]);
+					// if (S11_Y_T_dummy - F3_T[m] > 1760 && S11_Y_T_dummy - F3_T[m] < 1900) //Fast Beam.
+					if (S11_Y_T_dummy - F3_T[m] > 1900 && S11_Y_T_dummy - F3_T[m] < 2200) // Slow Beam.
+					{
+						if (S11_Y_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (S11_Y_I[0][l - 1][m] != -1000000 && S11_Y_I[0][l][m] == -1000000 && S11_Y_I[1][l - 1][m] != p_S11_y_cal->GetTiming())
+								{
+									S11_YA_Counter = S11_YA_Counter + 1;
+									S11_Y_I[0][l][m] = p_S11_y_cal->GetID();
+									S11_Y_I[1][l][m] = p_S11_y_cal->GetTiming();
+									S11_Y_I[2][l][m] = p_S11_y_cal->GetCharge();
+
+									S11_Y_I_C[0][l][m] = S11_Y_I[0][l][m];
+									S11_Y_I_C[1][l][m] = S11_Y_I[1][l][m];
+									S11_Y_I_C[2][l][m] = S11_Y_I[2][l][m] * (S11_Y_factor / list_SRPPAC_gain[0][4][int(S11_Y_I[0][l][m])]);
+								}
+							}
+						}
+
+						if (S11_Y_I[0][0][m] == -1000000)
+						{
+							S11_YA_E_Counter = S11_YA_E_Counter + 1;
+							S11_Y_I[0][0][m] = p_S11_y_cal->GetID();
+							S11_Y_I[1][0][m] = p_S11_y_cal->GetTiming();
+							S11_Y_I[2][0][m] = p_S11_y_cal->GetCharge();
+
+							S11_Y_I_C[0][0][m] = S11_Y_I[0][0][m];
+							S11_Y_I_C[1][0][m] = S11_Y_I[1][0][m];
+							S11_Y_I_C[2][0][m] = S11_Y_I[2][0][m] * (S11_Y_factor / list_SRPPAC_gain[0][4][int(S11_Y_I[0][0][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(S11_Y_I_C);
+
+		for (int k = 0; k < array_S11_x_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_S11_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (S11_X_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_S11_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(S11_X_I_C[0][0][m] - S11_Y_I_C[0][0][l]) < 90)
+						{
+							S11_XY_Counter = S11_XY_Counter + 1;
+							S11_X_I_C2[0][k][m] = S11_X_I_C[0][k][m];
+							S11_X_I_C2[1][k][m] = S11_X_I_C[1][k][m];
+							S11_X_I_C2[2][k][m] = S11_X_I_C[2][k][m] * (S11_X_factor / list_SRPPAC_gain2[1][int(S11_Y_I_C[0][0][l] / 4)][4][int(S11_X_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(S11_X_I_C2);
+
+		for (int k = 0; k < array_S11_y_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_S11_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (S11_Y_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_S11_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(S11_Y_I_C[0][0][m] - S11_X_I_C[0][0][l]) < 90)
+						{
+							S11_YX_Counter = S11_YX_Counter + 1;
+							S11_Y_I_C2[0][k][m] = S11_Y_I_C[0][k][m];
+							S11_Y_I_C2[1][k][m] = S11_Y_I_C[1][k][m];
+							S11_Y_I_C2[2][k][m] = S11_Y_I_C[2][k][m] * (S11_Y_factor / list_SRPPAC_gain2[0][int(S11_X_I_C[0][0][l] / 6)][4][int(S11_Y_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(S11_Y_I_C2);
+
+		for (int m = 0; m < array_S11_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S11_X_I_C2[2][1][m] > 0 && abs(S11_X_I_C2[0][0][m] - S11_X_I_C2[0][1][m]) == 1)
+			{
+				h_S11_h_Q0_Q1->Fill(S11_X_I_C2[2][0][m] - S11_X_I_C2[2][1][m]);
+				h_S11_h_Q0_Q1_S[int(S11_X_I_C2[0][0][m])][int(S11_X_I_C2[0][1][m])]->Fill(S11_X_I_C2[2][0][m] - S11_X_I_C2[2][1][m]);
+
+				S11_X_Q_Counter = S11_X_Q_Counter + 1;
+				double S11_X_up = 0.;
+				double S11_X_down = 0.;
+				double S11_X_up_C = 0.;
+				double S11_X_down_C = 0.;
+				double S11_X_up_C2 = 0.;
+				double S11_X_down_C2 = 0.;
+				for (int k = 0; k < array_S11_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S11_X_I[2][k][m]))
+						continue;
+					S11_X_up = S11_X_up + S11_X_I[0][k][m] * S11_X_I[2][k][m];
+					S11_X_down = S11_X_down + S11_X_I[2][k][m];
+				}
+				for (int k = 0; k < array_S11_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S11_X_I_C[2][k][m]))
+						continue;
+					S11_X_up_C = S11_X_up_C + S11_X_I_C[0][k][m] * S11_X_I_C[2][k][m];
+					S11_X_down_C = S11_X_down_C + S11_X_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_S11_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S11_X_I_C2[2][k][m]))
+						continue;
+					S11_X_up_C2 = S11_X_up_C2 + S11_X_I_C2[0][k][m] * S11_X_I_C2[2][k][m];
+					S11_X_down_C2 = S11_X_down_C2 + S11_X_I_C2[2][k][m];
+				}
+
+				S11_X[m] = -((S11_X_up / S11_X_down) * (240. / 94.) + 2.55 / 2. - 120);
+				S11_X_C[m] = -((S11_X_up_C / S11_X_down_C) * (240. / 94.) + 2.55 / 2. - 120);
+				S11_X_C2[m] = -((S11_X_up_C2 / S11_X_down_C2) * (240. / 94.) + 2.55 / 2. - 120);
+
+				if (S11_X_I_C2[0][0][m] > S11_X_I_C2[0][1][m])
+				{
+					S11_X_M[m] = -((S11_X_I_C2[0][0][m] - (1 - h_S11_h_Q0_Q1_F->GetBinContent(int((S11_X_I_C2[2][0][m] - S11_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (S11_X_I_C2[0][0][m] < S11_X_I_C2[0][1][m])
+				{
+					S11_X_M[m] = -((S11_X_I_C2[0][0][m] + (1 - h_S11_h_Q0_Q1_F->GetBinContent(int((S11_X_I_C2[2][0][m] - S11_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (S11_X_I_C2[0][0][m] > S11_X_I_C2[0][1][m])
+				{
+					S11_X_M2[m] = -((S11_X_I_C2[0][0][m] - (1 - h_S11_h_Q0_Q1_S_F[int(S11_X_I_C2[0][0][m])][int(S11_X_I_C2[0][1][m])]->GetBinContent(int((S11_X_I_C2[2][0][m] - S11_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (S11_X_I_C2[0][0][m] < S11_X_I_C2[0][1][m])
+				{
+					S11_X_M2[m] = -((S11_X_I_C2[0][0][m] + (1 - h_S11_h_Q0_Q1_S_F[int(S11_X_I_C2[0][0][m])][int(S11_X_I_C2[0][1][m])]->GetBinContent(int((S11_X_I_C2[2][0][m] - S11_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S11_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S11_Y_I_C2[2][1][m] > 0 && abs(S11_Y_I_C2[0][0][m] - S11_Y_I_C2[0][1][m]) == 1)
+			{
+				h_S11_v_Q0_Q1->Fill(S11_Y_I_C2[2][0][m] - S11_Y_I_C2[2][1][m]);
+				h_S11_v_Q0_Q1_S[int(S11_Y_I_C2[0][0][m])][int(S11_Y_I_C2[0][1][m])]->Fill(S11_Y_I_C2[2][0][m] - S11_Y_I_C2[2][1][m]);
+
+				S11_Y_Q_Counter = S11_Y_Q_Counter + 1;
+				double S11_Y_up = 0.;
+				double S11_Y_down = 0.;
+				double S11_Y_up_C = 0.;
+				double S11_Y_down_C = 0.;
+				double S11_Y_up_C2 = 0.;
+				double S11_Y_down_C2 = 0.;
+				for (int k = 0; k < array_S11_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S11_Y_I[2][k][m]))
+						continue;
+					S11_Y_up = S11_Y_up + S11_Y_I[0][k][m] * S11_Y_I[2][k][m];
+					S11_Y_down = S11_Y_down + S11_Y_I[2][k][m];
+				}
+				for (int k = 0; k < array_S11_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S11_Y_I_C[2][k][m]))
+						continue;
+					S11_Y_up_C = S11_Y_up_C + S11_Y_I_C[0][k][m] * S11_Y_I_C[2][k][m];
+					S11_Y_down_C = S11_Y_down_C + S11_Y_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_S11_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S11_Y_I_C2[2][k][m]))
+						continue;
+					S11_Y_up_C2 = S11_Y_up_C2 + S11_Y_I_C2[0][k][m] * S11_Y_I_C2[2][k][m];
+					S11_Y_down_C2 = S11_Y_down_C2 + S11_Y_I_C2[2][k][m];
+				}
+
+				S11_Y[m] = -((S11_Y_up / S11_Y_down) * (150. / 58.) + 2.58 / 2. - 75);
+				S11_Y_C[m] = -((S11_Y_up_C / S11_Y_down_C) * (150. / 58.) + 2.58 / 2. - 75);
+				S11_Y_C2[m] = -((S11_Y_up_C2 / S11_Y_down_C2) * (150. / 58.) + 2.58 / 2. - 75);
+
+				if (S11_Y_I_C2[0][0][m] > S11_Y_I_C2[0][1][m])
+				{
+					S11_Y_M[m] = -((S11_Y_I_C2[0][0][m] - (1 - h_S11_v_Q0_Q1_F->GetBinContent(int((S11_Y_I_C2[2][0][m] - S11_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (S11_Y_I_C2[0][0][m] < S11_Y_I_C2[0][1][m])
+				{
+					S11_Y_M[m] = -((S11_Y_I_C2[0][0][m] + (1 - h_S11_v_Q0_Q1_F->GetBinContent(int((S11_Y_I_C2[2][0][m] - S11_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (S11_Y_I_C2[0][0][m] > S11_Y_I_C2[0][1][m])
+				{
+					S11_Y_M2[m] = -((S11_Y_I_C2[0][0][m] - (1 - h_S11_v_Q0_Q1_S_F[int(S11_Y_I_C2[0][0][m])][int(S11_Y_I_C2[0][1][m])]->GetBinContent(int((S11_Y_I_C2[2][0][m] - S11_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (S11_Y_I_C2[0][0][m] < S11_Y_I_C2[0][1][m])
+				{
+					S11_Y_M2[m] = -((S11_Y_I_C2[0][0][m] + (1 - h_S11_v_Q0_Q1_S_F[int(S11_Y_I_C2[0][0][m])][int(S11_Y_I_C2[0][1][m])]->GetBinContent(int((S11_Y_I_C2[2][0][m] - S11_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+			}
+		}
+
+		double S12_X_T_dummy;
+		if (array_S12_x_cal->GetEntries() > 0)
+		{
+			S12_X_E_Counter = S12_X_E_Counter + 1;
+			for (int k = 0; k < array_S12_x_cal->GetEntries() && k < 50; k++)
+			{
+				S12_X_Counter = S12_X_Counter + 1;
+				p_S12_x_cal = (TTimingChargePositionData *)array_S12_x_cal->At(k);
+				S12_X_T_dummy = p_S12_x_cal->GetTiming();
+
+				for (int m = 0; m < array_S12_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_S12X_F3->Fill(S12_X_T_dummy - F3_T[m]);
+					// if (S12_X_T_dummy - F3_T[m] > 1750 && S12_X_T_dummy - F3_T[m] < 1900) //Fast Beam.
+					if (S12_X_T_dummy - F3_T[m] > 1900 && S12_X_T_dummy - F3_T[m] < 2200) // Slow Beam.
+					{
+						if (S12_X_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (S12_X_I[0][l - 1][m] != -1000000 && S12_X_I[0][l][m] == -1000000 && S12_X_I[1][l - 1][m] != p_S12_x_cal->GetTiming())
+								{
+									S12_XA_Counter = S12_XA_Counter + 1;
+									S12_X_I[0][l][m] = p_S12_x_cal->GetID();
+									S12_X_I[1][l][m] = p_S12_x_cal->GetTiming();
+									S12_X_I[2][l][m] = p_S12_x_cal->GetCharge();
+
+									S12_X_I_C[0][l][m] = S12_X_I[0][l][m];
+									S12_X_I_C[1][l][m] = S12_X_I[1][l][m];
+									S12_X_I_C[2][l][m] = S12_X_I[2][l][m] * (S12_X_factor / list_SRPPAC_gain[1][5][int(S12_X_I[0][l][m])]);
+								}
+							}
+						}
+
+						if (S12_X_I[0][0][m] == -1000000)
+						{
+							S12_XA_E_Counter = S12_XA_E_Counter + 1;
+							S12_X_I[0][0][m] = p_S12_x_cal->GetID();
+							S12_X_I[1][0][m] = p_S12_x_cal->GetTiming();
+							S12_X_I[2][0][m] = p_S12_x_cal->GetCharge();
+
+							S12_X_I_C[0][0][m] = S12_X_I[0][0][m];
+							S12_X_I_C[1][0][m] = S12_X_I[1][0][m];
+							S12_X_I_C[2][0][m] = S12_X_I[2][0][m] * (S12_X_factor / list_SRPPAC_gain[1][5][int(S12_X_I[0][0][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(S12_X_I_C);
+
+		double S12_Y_T_dummy;
+		if (array_S12_y_cal->GetEntries() > 0)
+		{
+			S12_Y_E_Counter = S12_Y_E_Counter + 1;
+			for (int k = 0; k < array_S12_y_cal->GetEntries() && k < 50; k++)
+			{
+				S12_Y_Counter = S12_Y_Counter + 1;
+				p_S12_y_cal = (TTimingChargePositionData *)array_S12_y_cal->At(k);
+				S12_Y_T_dummy = p_S12_y_cal->GetTiming();
+
+				for (int m = 0; m < array_S12_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+				{
+					h_T_S12Y_F3->Fill(S12_Y_T_dummy - F3_T[m]);
+					// if (S12_Y_T_dummy - F3_T[m] > 1750 && S12_Y_T_dummy - F3_T[m] < 1900) //Fast Beam.
+					if (S12_Y_T_dummy - F3_T[m] > 1900 && S12_Y_T_dummy - F3_T[m] < 2200) // Slow Beam.
+					{
+						if (S12_Y_I[0][0][m] != -1000000)
+						{
+							for (int l = 1; l < SRPPAC_max_mult; l++)
+							{
+								if (S12_Y_I[0][l - 1][m] != -1000000 && S12_Y_I[0][l][m] == -1000000 && S12_Y_I[1][l - 1][m] != p_S12_y_cal->GetTiming())
+								{
+									S12_YA_Counter = S12_YA_Counter + 1;
+									S12_Y_I[0][l][m] = p_S12_y_cal->GetID();
+									S12_Y_I[1][l][m] = p_S12_y_cal->GetTiming();
+									S12_Y_I[2][l][m] = p_S12_y_cal->GetCharge();
+
+									S12_Y_I_C[0][l][m] = S12_Y_I[0][l][m];
+									S12_Y_I_C[1][l][m] = S12_Y_I[1][l][m];
+									S12_Y_I_C[2][l][m] = S12_Y_I[2][l][m] * (S12_Y_factor / list_SRPPAC_gain[0][5][int(S12_Y_I[0][l][m])]);
+								}
+							}
+						}
+
+						if (S12_Y_I[0][0][m] == -1000000)
+						{
+							S12_YA_E_Counter = S12_YA_E_Counter + 1;
+							S12_Y_I[0][0][m] = p_S12_y_cal->GetID();
+							S12_Y_I[1][0][m] = p_S12_y_cal->GetTiming();
+							S12_Y_I[2][0][m] = p_S12_y_cal->GetCharge();
+
+							S12_Y_I_C[0][0][m] = S12_Y_I[0][0][m];
+							S12_Y_I_C[1][0][m] = S12_Y_I[1][0][m];
+							S12_Y_I_C[2][0][m] = S12_Y_I[2][0][m] * (S12_Y_factor / list_SRPPAC_gain[0][5][int(S12_Y_I[0][0][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(S12_Y_I_C);
+
+		for (int k = 0; k < array_S12_x_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_S12_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (S12_X_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_S12_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(S12_X_I_C[0][0][m] - S12_Y_I_C[0][0][l]) < 90)
+						{
+							S12_XY_Counter = S12_XY_Counter + 1;
+							S12_X_I_C2[0][k][m] = S12_X_I_C[0][k][m];
+							S12_X_I_C2[1][k][m] = S12_X_I_C[1][k][m];
+							S12_X_I_C2[2][k][m] = S12_X_I_C[2][k][m] * (S12_X_factor / list_SRPPAC_gain2[1][int(S12_Y_I_C[0][0][l] / 4)][5][int(S12_X_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(S12_X_I_C2);
+
+		for (int k = 0; k < array_S12_y_cal->GetEntries() && k < SRPPAC_max_ion; k++)
+		{
+			for (int m = 0; m < array_S12_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+			{
+				if (S12_Y_I_C[0][k][m] != -1000000)
+				{
+					for (int l = 0; l < array_S12_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+					{
+						if (abs(S12_Y_I_C[0][0][m] - S12_X_I_C[0][0][l]) < 90)
+						{
+							S12_YX_Counter = S12_YX_Counter + 1;
+							S12_Y_I_C2[0][k][m] = S12_Y_I_C[0][k][m];
+							S12_Y_I_C2[1][k][m] = S12_Y_I_C[1][k][m];
+							S12_Y_I_C2[2][k][m] = S12_Y_I_C[2][k][m] * (S12_Y_factor / list_SRPPAC_gain2[0][int(S12_X_I_C[0][0][l] / 6)][5][int(S12_Y_I_C[0][k][m])]);
+						}
+					}
+				}
+			}
+		}
+
+		f_sort(S12_Y_I_C2);
+
+		// We Fill some histograms.
+		for (int m = 0; m < array_FE91_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE91_X_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE91_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE91_X_I_C[0][0][m] - FE91_Y_I_C[0][0][l]) < 50)
+					{
+						h_FE91_X_Q0_C[int(FE91_Y_I_C[0][0][l] / 4)]->Fill(FE91_X_I_C[0][0][m], FE91_X_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE91_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE91_Y_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE91_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE91_Y_I_C[0][0][m] - FE91_X_I_C[0][0][l]) < 50)
+					{
+						h_FE91_Y_Q0_C[int(FE91_X_I_C[0][0][l] / 6)]->Fill(FE91_Y_I_C[0][0][m], FE91_Y_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE92_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE92_X_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE92_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE92_X_I_C[0][0][m] - FE92_Y_I_C[0][0][l]) < 50)
+					{
+						h_FE92_X_Q0_C[int(FE92_Y_I_C[0][0][l] / 4)]->Fill(FE92_X_I_C[0][0][m], FE92_X_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE92_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE92_Y_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE92_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE92_Y_I_C[0][0][m] - FE92_X_I_C[0][0][l]) < 50)
+					{
+						h_FE92_Y_Q0_C[int(FE92_X_I_C[0][0][l] / 6)]->Fill(FE92_Y_I_C[0][0][m], FE92_Y_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE121_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE121_X_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE121_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE121_X_I_C[0][0][m] - FE121_Y_I_C[0][0][l]) < 90)
+					{
+						h_FE121_X_Q0_C[int(FE121_Y_I_C[0][0][l] / 4)]->Fill(FE121_X_I_C[0][0][m], FE121_X_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE121_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE121_Y_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE121_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE121_Y_I_C[0][0][m] - FE121_X_I_C[0][0][l]) < 90)
+					{
+						h_FE121_Y_Q0_C[int(FE121_X_I_C[0][0][l] / 6)]->Fill(FE121_Y_I_C[0][0][m], FE121_Y_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE122_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE122_X_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE122_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE122_X_I_C[0][0][m] - FE122_Y_I_C[0][0][l]) < 90)
+					{
+						h_FE122_X_Q0_C[int(FE122_Y_I_C[0][0][l] / 4)]->Fill(FE122_X_I_C[0][0][m], FE122_X_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE122_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE122_Y_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE122_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE122_Y_I_C[0][0][m] - FE122_X_I_C[0][0][l]) < 90)
+					{
+						h_FE122_Y_Q0_C[int(FE122_X_I_C[0][0][l] / 6)]->Fill(FE122_Y_I_C[0][0][m], FE122_Y_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S11_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S11_X_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_S11_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(S11_X_I_C[0][0][m] - S11_Y_I_C[0][0][l]) < 90)
+					{
+						h_S11_X_Q0_C[int(S11_Y_I_C[0][0][l] / 4)]->Fill(S11_X_I_C[0][0][m], S11_X_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S11_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S11_Y_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_S11_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(S11_Y_I_C[0][0][m] - S11_X_I_C[0][0][l]) < 90)
+					{
+						h_S11_Y_Q0_C[int(S11_X_I_C[0][0][l] / 6)]->Fill(S11_Y_I_C[0][0][m], S11_Y_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S12_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S12_X_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_S12_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(S12_X_I_C[0][0][m] - S12_Y_I_C[0][0][l]) < 90)
+					{
+						h_S12_X_Q0_C[int(S12_Y_I_C[0][0][l] / 4)]->Fill(S12_X_I_C[0][0][m], S12_X_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S12_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S12_Y_I_C[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_S12_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(S12_Y_I_C[0][0][m] - S12_X_I_C[0][0][l]) < 90)
+					{
+						h_S12_Y_Q0_C[int(S12_X_I_C[0][0][l] / 6)]->Fill(S12_Y_I_C[0][0][m], S12_Y_I_C[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE91_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE91_X_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE91_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE91_X_I_C2[0][0][m] - FE91_Y_I_C2[0][0][l]) < 50)
+					{
+						h_FE91_X_Q0_C2[int(FE91_Y_I_C2[0][0][l] / 4)]->Fill(FE91_X_I_C2[0][0][m], FE91_X_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE91_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE91_Y_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE91_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE91_Y_I_C2[0][0][m] - FE91_X_I_C2[0][0][l]) < 50)
+					{
+						h_FE91_Y_Q0_C2[int(FE91_X_I_C2[0][0][l] / 6)]->Fill(FE91_Y_I_C2[0][0][m], FE91_Y_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE92_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE92_X_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE92_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE92_X_I_C2[0][0][m] - FE92_Y_I_C2[0][0][l]) < 50)
+					{
+						h_FE92_X_Q0_C2[int(FE92_Y_I_C2[0][0][l] / 4)]->Fill(FE92_X_I_C2[0][0][m], FE92_X_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE92_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE92_Y_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE92_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE92_Y_I_C2[0][0][m] - FE92_X_I_C2[0][0][l]) < 50)
+					{
+						h_FE92_Y_Q0_C2[int(FE92_X_I_C2[0][0][l] / 6)]->Fill(FE92_Y_I_C2[0][0][m], FE92_Y_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE121_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE121_X_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE121_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE121_X_I_C2[0][0][m] - FE121_Y_I_C2[0][0][l]) < 90)
+					{
+						h_FE121_X_Q0_C2[int(FE121_Y_I_C2[0][0][l] / 4)]->Fill(FE121_X_I_C2[0][0][m], FE121_X_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE121_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE121_Y_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE121_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE121_Y_I_C2[0][0][m] - FE121_X_I_C2[0][0][l]) < 90)
+					{
+						h_FE121_Y_Q0_C2[int(FE121_X_I_C2[0][0][l] / 6)]->Fill(FE121_Y_I_C2[0][0][m], FE121_Y_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE122_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE122_X_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE122_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE122_X_I_C2[0][0][m] - FE122_Y_I_C2[0][0][l]) < 90)
+					{
+						h_FE122_X_Q0_C2[int(FE122_Y_I_C2[0][0][l] / 4)]->Fill(FE122_X_I_C2[0][0][m], FE122_X_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_FE122_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (FE122_Y_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_FE122_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(FE122_Y_I_C2[0][0][m] - FE122_X_I_C2[0][0][l]) < 90)
+					{
+						h_FE122_Y_Q0_C2[int(FE122_X_I_C2[0][0][l] / 6)]->Fill(FE122_Y_I_C2[0][0][m], FE122_Y_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S11_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S11_X_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_S11_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(S11_X_I_C2[0][0][m] - S11_Y_I_C2[0][0][l]) < 90)
+					{
+						h_S11_X_Q0_C2[int(S11_Y_I_C2[0][0][l] / 4)]->Fill(S11_X_I_C2[0][0][m], S11_X_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S11_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S11_Y_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_S11_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(S11_Y_I_C2[0][0][m] - S11_X_I_C2[0][0][l]) < 90)
+					{
+						h_S11_Y_Q0_C2[int(S11_X_I_C2[0][0][l] / 6)]->Fill(S11_Y_I_C2[0][0][m], S11_Y_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S12_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S12_X_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_S12_y_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(S12_X_I_C2[0][0][m] - S12_Y_I_C2[0][0][l]) < 90)
+					{
+						h_S12_X_Q0_C2[int(S12_Y_I_C2[0][0][l] / 4)]->Fill(S12_X_I_C2[0][0][m], S12_X_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S12_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S12_Y_I_C2[0][0][m] != -1000000)
+			{
+				for (int l = 0; l < array_S12_x_cal->GetEntries() && l < SRPPAC_max_ion; l++)
+				{
+					if (abs(S12_Y_I_C2[0][0][m] - S12_X_I_C2[0][0][l]) < 90)
+					{
+						h_S12_Y_Q0_C2[int(S12_X_I_C2[0][0][l] / 6)]->Fill(S12_Y_I_C2[0][0][m], S12_Y_I_C2[2][0][m]);
+					}
+				}
+			}
+		}
+
+		for (int k = 0; k < SRPPAC_max_ion; k++)
+		{
+			S11_T_I[k] = S11_Y_I_C[1][0][k];
+		}
+
+		for (int k = 0; k < SRPPAC_max_ion; k++)
+		{
+			S12_T_I[k] = S12_X_I_C[1][0][k];
+		}
+
+		double S1_T_dummy;
+		for (int j = 0; j < 50 && j < SRPPAC_max_ion; j++)
+		{
+			for (int k = 0; k < 50 && k < SRPPAC_max_ion; k++)
+			{
+				// cout << S12_T_I[j] - S11_T_I[k] << endl;
+				if (S12_T_I[j] - S11_T_I[k] > 10. && S12_T_I[j] - S11_T_I[k] < 55. && S12_T_I[j] != -1000000 && S11_T_I[k] != -1000000)
+				{
+					S1_A_Counter = S1_A_Counter + 1;
+					S1_T_dummy = (S12_T_I[j] + S11_T_I[k]) / 2.;
+					S1_T_I[j] = S1_T_dummy;
+					// cout << S1_T_dummy  << endl;
+				}
+			}
+		}
+
+		double S1_E_dummy;
+		double S1PID_T_dummy;
+		for (int j = 0; j < 50 && j < SRPPAC_max_ion; j++)
+		{
+			for (int k = 0; k < 50 && k < SRPPAC_max_ion; k++)
+			{
+				h_T_S1A_F3->Fill(S1_T_I[j] - F3_T[k]);
+				// if (S1_T_I[j] - F3_T[k] > 1700. && S1_T_I[j] - F3_T[k] < 1900.) //Fast Beam.
+				if (S1_T_I[j] - F3_T[k] > 1900. && S1_T_I[j] - F3_T[k] < 2200.) // Slow Beam.
+				{
+					F3_S1_A_Counter = F3_S1_A_Counter + 1;
+					S1PID_T_dummy = S1_T_I[j] - Beam_T[k] - PID_T[k] - F3_T[k];
+					S1PID_T[k] = S1PID_T_dummy;
+					// cout << Beam_T[k] << endl;
+
+					S1_E_dummy = calculateBeamEnergy(S1PID_T[k] - 467.679, distance_FE12_S1); // 467.679 ns is the TOF offset for S1PID_T_0
+					S1_E[k] = S1_E_dummy;
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S12_x_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S12_X_I_C2[2][1][m] > 0 && abs(S12_X_I_C2[0][0][m] - S12_X_I_C2[0][1][m]) == 1)
+			{
+				h_S12_h_Q0_Q1->Fill(S12_X_I_C2[2][0][m] - S12_X_I_C2[2][1][m]);
+				h_S12_h_Q0_Q1_S[int(S12_X_I_C2[0][0][m])][int(S12_X_I_C2[0][1][m])]->Fill(S12_X_I_C2[2][0][m] - S12_X_I_C2[2][1][m]);
+
+				S12_X_Q_Counter = S12_X_Q_Counter + 1;
+				double S12_X_up = 0.;
+				double S12_X_down = 0.;
+				double S12_X_up_C = 0.;
+				double S12_X_down_C = 0.;
+				double S12_X_up_C2 = 0.;
+				double S12_X_down_C2 = 0.;
+				for (int k = 0; k < array_S12_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S12_X_I[2][k][m]))
+						continue;
+					S12_X_up = S12_X_up + S12_X_I[0][k][m] * S12_X_I[2][k][m];
+					S12_X_down = S12_X_down + S12_X_I[2][k][m];
+				}
+				for (int k = 0; k < array_S12_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S12_X_I_C[2][k][m]))
+						continue;
+					S12_X_up_C = S12_X_up_C + S12_X_I_C[0][k][m] * S12_X_I_C[2][k][m];
+					S12_X_down_C = S12_X_down_C + S12_X_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_S12_x_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S12_X_I_C2[2][k][m]))
+						continue;
+					S12_X_up_C2 = S12_X_up_C2 + S12_X_I_C2[0][k][m] * S12_X_I_C2[2][k][m];
+					S12_X_down_C2 = S12_X_down_C2 + S12_X_I_C2[2][k][m];
+				}
+
+				S12_X[m] = -((S12_X_up / S12_X_down) * (240. / 94.) + 2.55 / 2. - 120);
+				S12_X_C[m] = -((S12_X_up_C / S12_X_down_C) * (240. / 94.) + 2.55 / 2. - 120);
+				S12_X_C2[m] = -((S12_X_up_C2 / S12_X_down_C2) * (240. / 94.) + 2.55 / 2. - 120);
+
+				if (S12_X_I_C2[0][0][m] > S12_X_I_C2[0][1][m])
+				{
+					S12_X_M[m] = -((S12_X_I_C2[0][0][m] - (1 - h_S12_h_Q0_Q1_F->GetBinContent(int((S12_X_I_C2[2][0][m] - S12_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (S12_X_I_C2[0][0][m] < S12_X_I_C2[0][1][m])
+				{
+					S12_X_M[m] = -((S12_X_I_C2[0][0][m] + (1 - h_S12_h_Q0_Q1_F->GetBinContent(int((S12_X_I_C2[2][0][m] - S12_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (S12_X_I_C2[0][0][m] > S12_X_I_C2[0][1][m])
+				{
+					S12_X_M2[m] = -((S12_X_I_C2[0][0][m] - (1 - h_S12_h_Q0_Q1_S_F[int(S12_X_I_C2[0][0][m])][int(S12_X_I_C2[0][1][m])]->GetBinContent(int((S12_X_I_C2[2][0][m] - S12_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+
+				if (S12_X_I_C2[0][0][m] < S12_X_I_C2[0][1][m])
+				{
+					S12_X_M2[m] = -((S12_X_I_C2[0][0][m] + (1 - h_S12_h_Q0_Q1_S_F[int(S12_X_I_C2[0][0][m])][int(S12_X_I_C2[0][1][m])]->GetBinContent(int((S12_X_I_C2[2][0][m] - S12_X_I_C2[2][1][m]) * 100))) / 2) * (240. / 94.) + 2.55 / 2. - 120);
+				}
+			}
+		}
+
+		for (int m = 0; m < array_S12_y_cal->GetEntries() && m < SRPPAC_max_ion; m++)
+		{
+			if (S12_Y_I_C2[2][1][m] > 0 && abs(S12_Y_I_C2[0][0][m] - S12_Y_I_C2[0][1][m]) == 1)
+			{
+				h_S12_v_Q0_Q1->Fill(S12_Y_I_C2[2][0][m] - S12_Y_I_C2[2][1][m]);
+				h_S12_v_Q0_Q1_S[int(S12_Y_I_C2[0][0][m])][int(S12_Y_I_C2[0][1][m])]->Fill(S12_Y_I_C2[2][0][m] - S12_Y_I_C2[2][1][m]);
+
+				S12_Y_Q_Counter = S12_Y_Q_Counter + 1;
+				double S12_Y_up = 0.;
+				double S12_Y_down = 0.;
+				double S12_Y_up_C = 0.;
+				double S12_Y_down_C = 0.;
+				double S12_Y_up_C2 = 0.;
+				double S12_Y_down_C2 = 0.;
+				for (int k = 0; k < array_S12_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S12_Y_I[2][k][m]))
+						continue;
+					S12_Y_up = S12_Y_up + S12_Y_I[0][k][m] * S12_Y_I[2][k][m];
+					S12_Y_down = S12_Y_down + S12_Y_I[2][k][m];
+				}
+				for (int k = 0; k < array_S12_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S12_Y_I_C[2][k][m]))
+						continue;
+					S12_Y_up_C = S12_Y_up_C + S12_Y_I_C[0][k][m] * S12_Y_I_C[2][k][m];
+					S12_Y_down_C = S12_Y_down_C + S12_Y_I_C[2][k][m];
+				}
+				for (int k = 0; k < array_S12_y_cal->GetEntries() && k < 50; k++)
+				{
+					if (isnan(S12_Y_I_C2[2][k][m]))
+						continue;
+					S12_Y_up_C2 = S12_Y_up_C2 + S12_Y_I_C2[0][k][m] * S12_Y_I_C2[2][k][m];
+					S12_Y_down_C2 = S12_Y_down_C2 + S12_Y_I_C2[2][k][m];
+				}
+
+				S12_Y[m] = -((S12_Y_up / S12_Y_down) * (150. / 58.) + 2.58 / 2. - 75);
+				S12_Y_C[m] = -((S12_Y_up_C / S12_Y_down_C) * (150. / 58.) + 2.58 / 2. - 75);
+				S12_Y_C2[m] = -((S12_Y_up_C2 / S12_Y_down_C2) * (150. / 58.) + 2.58 / 2. - 75);
+
+				if (S12_Y_I_C2[0][0][m] > S12_Y_I_C2[0][1][m])
+				{
+					S12_Y_M[m] = -((S12_Y_I_C2[0][0][m] - (1 - h_S12_v_Q0_Q1_F->GetBinContent(int((S12_Y_I_C2[2][0][m] - S12_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (S12_Y_I_C2[0][0][m] < S12_Y_I_C2[0][1][m])
+				{
+					S12_Y_M[m] = -((S12_Y_I_C2[0][0][m] + (1 - h_S12_v_Q0_Q1_F->GetBinContent(int((S12_Y_I_C2[2][0][m] - S12_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (S12_Y_I_C2[0][0][m] > S12_Y_I_C2[0][1][m])
+				{
+					S12_Y_M2[m] = -((S12_Y_I_C2[0][0][m] - (1 - h_S12_v_Q0_Q1_S_F[int(S12_Y_I_C2[0][0][m])][int(S12_Y_I_C2[0][1][m])]->GetBinContent(int((S12_Y_I_C2[2][0][m] - S12_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+
+				if (S12_Y_I_C2[0][0][m] < S12_Y_I_C2[0][1][m])
+				{
+					S12_Y_M2[m] = -((S12_Y_I_C2[0][0][m] + (1 - h_S12_v_Q0_Q1_S_F[int(S12_Y_I_C2[0][0][m])][int(S12_Y_I_C2[0][1][m])]->GetBinContent(int((S12_Y_I_C2[2][0][m] - S12_Y_I_C2[2][1][m]) * 100))) / 2) * (150. / 58.) + 2.58 / 2. - 75);
+				}
+			}
+		}
+
+		for (int m = 0; m < SRPPAC_max_ion; m++)
+		{
+			if (S1PID_T[m] > 0)
+			{
+				S1_A[m] = atan((S12_X[m] - S11_X[m]) / S1_Z);
+				S1_A_C[m] = atan((S12_X_C[m] - S11_X_C[m]) / S1_Z);
+				S1_A_C2[m] = atan((S12_X_C2[m] - S11_X_C2[m]) / S1_Z);
+				S1_A_M[m] = atan((S12_X_M[m] - S11_X_M[m]) / S1_Z);
+				S1_A_M2[m] = atan((S12_X_M2[m] - S11_X_M2[m]) / S1_Z);
+
+				S1_B[m] = atan((S12_Y[m] - S11_Y[m]) / S1_Z);
+				S1_B_C[m] = atan((S12_Y_C[m] - S11_Y_C[m]) / S1_Z);
+				S1_B_C2[m] = atan((S12_Y_C2[m] - S11_Y_C2[m]) / S1_Z);
+				S1_B_M[m] = atan((S12_Y_M[m] - S11_Y_M[m]) / S1_Z);
+				S1_B_M2[m] = atan((S12_Y_M2[m] - S11_Y_M2[m]) / S1_Z);
+
+				S1_X[m] = S1_S0 * tan(S1_A[m]) + S11_X[m];
+				S1_X_C[m] = S1_S0 * tan(S1_A_C[m]) + S11_X_C[m];
+				S1_X_C2[m] = S1_S0 * tan(S1_A_C2[m]) + S11_X_C2[m];
+				S1_X_M[m] = S1_S0 * tan(S1_A_M[m]) + S11_X_M[m];
+				S1_X_M2[m] = S1_S0 * tan(S1_A_M2[m]) + S11_X_M2[m];
+
+				S1_Y[m] = S1_S0 * tan(S1_B[m]) + S11_Y[m];
+				S1_Y_C[m] = S1_S0 * tan(S1_B_C[m]) + S11_Y_C[m];
+				S1_Y_C2[m] = S1_S0 * tan(S1_B_C2[m]) + S11_Y_C2[m];
+				S1_Y_M[m] = S1_S0 * tan(S1_B_M[m]) + S11_Y_M[m];
+				S1_Y_M2[m] = S1_S0 * tan(S1_B_M2[m]) + S11_Y_M2[m];
+			}
+		}
+
+		// 3.2.- S1 Ionization Chamber.
+
+		IC_Charge = 0;
+		IC_Z = 0;
+		IC_E_max = 0;
+		IC_Telescope_E = 0;
+		IC_Telescope_deltaE = 0;
+
+		// IC Charge Info Stored in IC_C_ branch
+		for (int j = 0; j < 30; j++)
+		{
+			p_IC_RAW = (TCatPulseShape *)array_IC_RAW_Charge->At(j);
+			IC_C_RAW[j] = p_IC_RAW->GetCharge();
+		}
+
+		// IC Energy Info Stored in IC_E_ branch
+		for (int j = 0; j < 30; j++)
+		{
+			p_IC = (TCatPulseShape *)array_IC_RAW_Energy->At(j);
+			IC_E[j] = p_IC->GetCharge();
+		}
+
+		// Calibrated IC Energy Info Stored in IC_E_Cal_ branch
+		for (int j = 0; j < 30; j++)
+		{
+			IC_E_Cal[j] = IC_E[j] * scalingFactor[j];
+		}
+
+		// cout << "S1 OK" << endl;
+
+		// Histogram filling.
+		for (int j = 0; j < 7; j++)
+		{
+			if (FE91_X_I[2][0][j] > 0.)
+			{
+				h_FE91_X_Q0->Fill(FE91_X_I[0][0][j], FE91_X_I[2][0][j]);
+			}
+			if (FE91_X_I_C[2][0][j] > 0.)
+			{
+				h_FE91_X_C_Q0->Fill(FE91_X_I_C[0][0][j], FE91_X_I_C[2][0][j]);
+			}
+			if (FE91_X_I_C2[2][0][j] > 0.)
+			{
+				h_FE91_X_C2_Q0->Fill(FE91_X_I_C2[0][0][j], FE91_X_I_C2[2][0][j]);
+			}
+			if (FE91_Y_I[2][0][j] > 0.)
+			{
+				h_FE91_Y_Q0->Fill(FE91_Y_I[0][0][j], FE91_Y_I[2][0][j]);
+			}
+			if (FE91_Y_I_C[2][0][j] > 0.)
+			{
+				h_FE91_Y_C_Q0->Fill(FE91_Y_I_C[0][0][j], FE91_Y_I_C[2][0][j]);
+			}
+			if (FE91_Y_I_C2[2][0][j] > 0.)
+			{
+				h_FE91_Y_C2_Q0->Fill(FE91_Y_I_C2[0][0][j], FE91_Y_I_C2[2][0][j]);
+			}
+			if (FE91_X_I[2][1][j] > 0.)
+			{
+				h_FE91_X_Q1->Fill(FE91_X_I[0][1][j], FE91_X_I[2][1][j]);
+			}
+			if (FE91_X_I_C[2][1][j] > 0.)
+			{
+				h_FE91_X_C_Q1->Fill(FE91_X_I_C[0][1][j], FE91_X_I_C[2][1][j]);
+			}
+			if (FE91_X_I_C2[2][1][j] > 0.)
+			{
+				h_FE91_X_C2_Q1->Fill(FE91_X_I_C2[0][0][j], FE91_X_I_C2[2][1][j]);
+			}
+			if (FE91_Y_I[2][1][j] > 0.)
+			{
+				h_FE91_Y_Q1->Fill(FE91_Y_I[0][1][j], FE91_Y_I[2][1][j]);
+			}
+			if (FE91_Y_I_C[2][1][j] > 0.)
+			{
+				h_FE91_Y_C_Q1->Fill(FE91_Y_I_C[0][1][j], FE91_Y_I_C[2][1][j]);
+			}
+			if (FE91_Y_I_C2[2][1][j] > 0.)
+			{
+				h_FE91_Y_C2_Q1->Fill(FE91_Y_I_C2[0][1][j], FE91_Y_I_C2[2][1][j]);
+			}
+			if (FE91_X_I[2][2][j] > 0.)
+			{
+				h_FE91_X_Q2->Fill(FE91_X_I[0][2][j], FE91_X_I[2][2][j]);
+			}
+			if (FE91_X_I_C[2][2][j] > 0.)
+			{
+				h_FE91_X_C_Q2->Fill(FE91_X_I_C[0][2][j], FE91_X_I_C[2][2][j]);
+			}
+			if (FE91_X_I_C2[2][2][j] > 0.)
+			{
+				h_FE91_X_C2_Q2->Fill(FE91_X_I_C2[0][2][j], FE91_X_I_C2[2][2][j]);
+			}
+			if (FE91_Y_I[2][2][j] > 0.)
+			{
+				h_FE91_Y_Q2->Fill(FE91_Y_I[0][2][j], FE91_Y_I[2][2][j]);
+			}
+			if (FE91_Y_I_C[2][2][j] > 0.)
+			{
+				h_FE91_Y_C_Q2->Fill(FE91_Y_I_C[0][2][j], FE91_Y_I_C[2][2][j]);
+			}
+			if (FE91_Y_I_C2[2][2][j] > 0.)
+			{
+				h_FE91_Y_C2_Q2->Fill(FE91_Y_I_C2[0][2][j], FE91_Y_I_C2[2][2][j]);
+			}
+			if (FE91_X_I[2][3][j] > 0.)
+			{
+				h_FE91_X_Q3->Fill(FE91_X_I[0][3][j], FE91_X_I[2][3][j]);
+			}
+			if (FE91_X_I_C[2][3][j] > 0.)
+			{
+				h_FE91_X_C_Q3->Fill(FE91_X_I_C[0][3][j], FE91_X_I_C[2][3][j]);
+			}
+			if (FE91_X_I_C2[2][3][j] > 0.)
+			{
+				h_FE91_X_C2_Q3->Fill(FE91_X_I_C2[0][3][j], FE91_X_I_C2[2][3][j]);
+			}
+			if (FE91_Y_I[2][3][j] > 0.)
+			{
+				h_FE91_Y_Q3->Fill(FE91_Y_I[0][3][j], FE91_Y_I[2][3][j]);
+			}
+			if (FE91_Y_I_C[2][3][j] > 0.)
+			{
+				h_FE91_Y_C_Q3->Fill(FE91_Y_I_C[0][3][j], FE91_Y_I_C[2][3][j]);
+			}
+			if (FE91_Y_I_C2[2][3][j] > 0.)
+			{
+				h_FE91_Y_C2_Q3->Fill(FE91_Y_I_C2[0][3][j], FE91_Y_I_C2[2][3][j]);
+			}
+			if (FE91_X_I[2][4][j] > 0.)
+			{
+				h_FE91_X_Q4->Fill(FE91_X_I[0][4][j], FE91_X_I[2][4][j]);
+			}
+			if (FE91_X_I_C[2][4][j] > 0.)
+			{
+				h_FE91_X_C_Q4->Fill(FE91_X_I_C[0][4][j], FE91_X_I_C[2][4][j]);
+			}
+			if (FE91_X_I_C2[2][4][j] > 0.)
+			{
+				h_FE91_X_C2_Q4->Fill(FE91_X_I_C2[0][0][j], FE91_X_I_C2[2][4][j]);
+			}
+			if (FE91_Y_I[2][4][j] > 0.)
+			{
+				h_FE91_Y_Q4->Fill(FE91_Y_I[0][4][j], FE91_Y_I[2][4][j]);
+			}
+			if (FE91_Y_I_C[2][4][j] > 0.)
+			{
+				h_FE91_Y_C_Q4->Fill(FE91_Y_I_C[0][4][j], FE91_Y_I_C[2][4][j]);
+			}
+			if (FE91_Y_I_C2[2][4][j] > 0.)
+			{
+				h_FE91_Y_C2_Q4->Fill(FE91_Y_I_C2[0][4][j], FE91_Y_I_C2[2][4][j]);
+			}
+			if (FE91_X_I[2][5][j] > 0.)
+			{
+				h_FE91_X_Q5->Fill(FE91_X_I[0][5][j], FE91_X_I[2][5][j]);
+			}
+			if (FE91_X_I_C[2][5][j] > 0.)
+			{
+				h_FE91_X_C_Q5->Fill(FE91_X_I_C[0][5][j], FE91_X_I_C[2][5][j]);
+			}
+			if (FE91_X_I_C2[2][5][j] > 0.)
+			{
+				h_FE91_X_C2_Q5->Fill(FE91_X_I_C2[0][0][j], FE91_X_I_C2[2][5][j]);
+			}
+			if (FE91_Y_I[2][5][j] > 0.)
+			{
+				h_FE91_Y_Q5->Fill(FE91_Y_I[0][5][j], FE91_Y_I[2][5][j]);
+			}
+			if (FE91_Y_I_C[2][5][j] > 0.)
+			{
+				h_FE91_Y_C_Q5->Fill(FE91_Y_I_C[0][5][j], FE91_Y_I_C[2][5][j]);
+			}
+			if (FE91_Y_I_C2[2][5][j] > 0.)
+			{
+				h_FE91_Y_C2_Q5->Fill(FE91_Y_I_C2[0][5][j], FE91_Y_I_C2[2][5][j]);
+			}
+			if (FE92_X_I[2][0][j] > 0.)
+			{
+				h_FE92_X_Q0->Fill(FE92_X_I[0][0][j], FE92_X_I[2][0][j]);
+			}
+			if (FE92_X_I_C[2][0][j] > 0.)
+			{
+				h_FE92_X_C_Q0->Fill(FE92_X_I_C[0][0][j], FE92_X_I_C[2][0][j]);
+			}
+			if (FE92_X_I_C2[2][0][j] > 0.)
+			{
+				h_FE92_X_C2_Q0->Fill(FE92_X_I_C2[0][0][j], FE92_X_I_C2[2][0][j]);
+			}
+			if (FE92_Y_I[2][0][j] > 0.)
+			{
+				h_FE92_Y_Q0->Fill(FE92_Y_I[0][0][j], FE92_Y_I[2][0][j]);
+			}
+			if (FE92_Y_I_C[2][0][j] > 0.)
+			{
+				h_FE92_Y_C_Q0->Fill(FE92_Y_I_C[0][0][j], FE92_Y_I_C[2][0][j]);
+			}
+			if (FE92_Y_I_C2[2][0][j] > 0.)
+			{
+				h_FE92_Y_C2_Q0->Fill(FE92_Y_I_C2[0][0][j], FE92_Y_I_C2[2][0][j]);
+			}
+			if (FE92_X_I[2][1][j] > 0.)
+			{
+				h_FE92_X_Q1->Fill(FE92_X_I[0][1][j], FE92_X_I[2][1][j]);
+			}
+			if (FE92_X_I_C[2][1][j] > 0.)
+			{
+				h_FE92_X_C_Q1->Fill(FE92_X_I_C[0][1][j], FE92_X_I_C[2][1][j]);
+			}
+			if (FE92_X_I_C2[2][1][j] > 0.)
+			{
+				h_FE92_X_C2_Q1->Fill(FE92_X_I_C2[0][0][j], FE92_X_I_C2[2][1][j]);
+			}
+			if (FE92_Y_I[2][1][j] > 0.)
+			{
+				h_FE92_Y_Q1->Fill(FE92_Y_I[0][1][j], FE92_Y_I[2][1][j]);
+			}
+			if (FE92_Y_I_C[2][1][j] > 0.)
+			{
+				h_FE92_Y_C_Q1->Fill(FE92_Y_I_C[0][1][j], FE92_Y_I_C[2][1][j]);
+			}
+			if (FE92_Y_I_C2[2][1][j] > 0.)
+			{
+				h_FE92_Y_C2_Q1->Fill(FE92_Y_I_C2[0][1][j], FE92_Y_I_C2[2][1][j]);
+			}
+			if (FE92_X_I[2][2][j] > 0.)
+			{
+				h_FE92_X_Q2->Fill(FE92_X_I[0][2][j], FE92_X_I[2][2][j]);
+			}
+			if (FE92_X_I_C[2][2][j] > 0.)
+			{
+				h_FE92_X_C_Q2->Fill(FE92_X_I_C[0][2][j], FE92_X_I_C[2][2][j]);
+			}
+			if (FE92_X_I_C2[2][2][j] > 0.)
+			{
+				h_FE92_X_C2_Q2->Fill(FE92_X_I_C2[0][2][j], FE92_X_I_C2[2][2][j]);
+			}
+			if (FE92_Y_I[2][2][j] > 0.)
+			{
+				h_FE92_Y_Q2->Fill(FE92_Y_I[0][2][j], FE92_Y_I[2][2][j]);
+			}
+			if (FE92_Y_I_C[2][2][j] > 0.)
+			{
+				h_FE92_Y_C_Q2->Fill(FE92_Y_I_C[0][2][j], FE92_Y_I_C[2][2][j]);
+			}
+			if (FE92_Y_I_C2[2][2][j] > 0.)
+			{
+				h_FE92_Y_C2_Q2->Fill(FE92_Y_I_C2[0][2][j], FE92_Y_I_C2[2][2][j]);
+			}
+			if (FE92_X_I[2][3][j] > 0.)
+			{
+				h_FE92_X_Q3->Fill(FE92_X_I[0][3][j], FE92_X_I[2][3][j]);
+			}
+			if (FE92_X_I_C[2][3][j] > 0.)
+			{
+				h_FE92_X_C_Q3->Fill(FE92_X_I_C[0][3][j], FE92_X_I_C[2][3][j]);
+			}
+			if (FE92_X_I_C2[2][3][j] > 0.)
+			{
+				h_FE92_X_C2_Q3->Fill(FE92_X_I_C2[0][3][j], FE92_X_I_C2[2][3][j]);
+			}
+			if (FE92_Y_I[2][3][j] > 0.)
+			{
+				h_FE92_Y_Q3->Fill(FE92_Y_I[0][3][j], FE92_Y_I[2][3][j]);
+			}
+			if (FE92_Y_I_C[2][3][j] > 0.)
+			{
+				h_FE92_Y_C_Q3->Fill(FE92_Y_I_C[0][3][j], FE92_Y_I_C[2][3][j]);
+			}
+			if (FE92_Y_I_C2[2][3][j] > 0.)
+			{
+				h_FE92_Y_C2_Q3->Fill(FE92_Y_I_C2[0][3][j], FE92_Y_I_C2[2][3][j]);
+			}
+			if (FE92_X_I[2][4][j] > 0.)
+			{
+				h_FE92_X_Q4->Fill(FE92_X_I[0][4][j], FE92_X_I[2][4][j]);
+			}
+			if (FE92_X_I_C[2][4][j] > 0.)
+			{
+				h_FE92_X_C_Q4->Fill(FE92_X_I_C[0][4][j], FE92_X_I_C[2][4][j]);
+			}
+			if (FE92_X_I_C2[2][4][j] > 0.)
+			{
+				h_FE92_X_C2_Q4->Fill(FE92_X_I_C2[0][0][j], FE92_X_I_C2[2][4][j]);
+			}
+			if (FE92_Y_I[2][4][j] > 0.)
+			{
+				h_FE92_Y_Q4->Fill(FE92_Y_I[0][4][j], FE92_Y_I[2][4][j]);
+			}
+			if (FE92_Y_I_C[2][4][j] > 0.)
+			{
+				h_FE92_Y_C_Q4->Fill(FE92_Y_I_C[0][4][j], FE92_Y_I_C[2][4][j]);
+			}
+			if (FE92_Y_I_C2[2][4][j] > 0.)
+			{
+				h_FE92_Y_C2_Q4->Fill(FE92_Y_I_C2[0][4][j], FE92_Y_I_C2[2][4][j]);
+			}
+			if (FE92_X_I[2][5][j] > 0.)
+			{
+				h_FE92_X_Q5->Fill(FE92_X_I[0][5][j], FE92_X_I[2][5][j]);
+			}
+			if (FE92_X_I_C[2][5][j] > 0.)
+			{
+				h_FE92_X_C_Q5->Fill(FE92_X_I_C[0][5][j], FE92_X_I_C[2][5][j]);
+			}
+			if (FE92_X_I_C2[2][5][j] > 0.)
+			{
+				h_FE92_X_C2_Q5->Fill(FE92_X_I_C2[0][0][j], FE92_X_I_C2[2][5][j]);
+			}
+			if (FE92_Y_I[2][5][j] > 0.)
+			{
+				h_FE92_Y_Q5->Fill(FE92_Y_I[0][5][j], FE92_Y_I[2][5][j]);
+			}
+			if (FE92_Y_I_C[2][5][j] > 0.)
+			{
+				h_FE92_Y_C_Q5->Fill(FE92_Y_I_C[0][5][j], FE92_Y_I_C[2][5][j]);
+			}
+			if (FE92_Y_I_C2[2][5][j] > 0.)
+			{
+				h_FE92_Y_C2_Q5->Fill(FE92_Y_I_C2[0][5][j], FE92_Y_I_C2[2][5][j]);
+			}
+
+			if (FE121_X_I[2][0][j] > 0.)
+			{
+				h_FE121_X_Q0->Fill(FE121_X_I[0][0][j], FE121_X_I[2][0][j]);
+			}
+			if (FE121_X_I_C[2][0][j] > 0.)
+			{
+				h_FE121_X_C_Q0->Fill(FE121_X_I_C[0][0][j], FE121_X_I_C[2][0][j]);
+			}
+			if (FE121_X_I_C2[2][0][j] > 0.)
+			{
+				h_FE121_X_C2_Q0->Fill(FE121_X_I_C2[0][0][j], FE121_X_I_C2[2][0][j]);
+			}
+			if (FE121_Y_I[2][0][j] > 0.)
+			{
+				h_FE121_Y_Q0->Fill(FE121_Y_I[0][0][j], FE121_Y_I[2][0][j]);
+			}
+			if (FE121_Y_I_C[2][0][j] > 0.)
+			{
+				h_FE121_Y_C_Q0->Fill(FE121_Y_I_C[0][0][j], FE121_Y_I_C[2][0][j]);
+			}
+			if (FE121_Y_I_C2[2][0][j] > 0.)
+			{
+				h_FE121_Y_C2_Q0->Fill(FE121_Y_I_C2[0][0][j], FE121_Y_I_C2[2][0][j]);
+			}
+			if (FE121_X_I[2][1][j] > 0.)
+			{
+				h_FE121_X_Q1->Fill(FE121_X_I[0][1][j], FE121_X_I[2][1][j]);
+			}
+			if (FE121_X_I_C[2][1][j] > 0.)
+			{
+				h_FE121_X_C_Q1->Fill(FE121_X_I_C[0][1][j], FE121_X_I_C[2][1][j]);
+			}
+			if (FE121_X_I_C2[2][1][j] > 0.)
+			{
+				h_FE121_X_C2_Q1->Fill(FE121_X_I_C2[0][0][j], FE121_X_I_C2[2][1][j]);
+			}
+			if (FE121_Y_I[2][1][j] > 0.)
+			{
+				h_FE121_Y_Q1->Fill(FE121_Y_I[0][1][j], FE121_Y_I[2][1][j]);
+			}
+			if (FE121_Y_I_C[2][1][j] > 0.)
+			{
+				h_FE121_Y_C_Q1->Fill(FE121_Y_I_C[0][1][j], FE121_Y_I_C[2][1][j]);
+			}
+			if (FE121_Y_I_C2[2][1][j] > 0.)
+			{
+				h_FE121_Y_C2_Q1->Fill(FE121_Y_I_C2[0][1][j], FE121_Y_I_C2[2][1][j]);
+			}
+			if (FE121_X_I[2][2][j] > 0.)
+			{
+				h_FE121_X_Q2->Fill(FE121_X_I[0][2][j], FE121_X_I[2][2][j]);
+			}
+			if (FE121_X_I_C[2][2][j] > 0.)
+			{
+				h_FE121_X_C_Q2->Fill(FE121_X_I_C[0][2][j], FE121_X_I_C[2][2][j]);
+			}
+			if (FE121_X_I_C2[2][2][j] > 0.)
+			{
+				h_FE121_X_C2_Q2->Fill(FE121_X_I_C2[0][2][j], FE121_X_I_C2[2][2][j]);
+			}
+			if (FE121_Y_I[2][2][j] > 0.)
+			{
+				h_FE121_Y_Q2->Fill(FE121_Y_I[0][2][j], FE121_Y_I[2][2][j]);
+			}
+			if (FE121_Y_I_C[2][2][j] > 0.)
+			{
+				h_FE121_Y_C_Q2->Fill(FE121_Y_I_C[0][2][j], FE121_Y_I_C[2][2][j]);
+			}
+			if (FE121_Y_I_C2[2][2][j] > 0.)
+			{
+				h_FE121_Y_C2_Q2->Fill(FE121_Y_I_C2[0][2][j], FE121_Y_I_C2[2][2][j]);
+			}
+			if (FE121_X_I[2][3][j] > 0.)
+			{
+				h_FE121_X_Q3->Fill(FE121_X_I[0][3][j], FE121_X_I[2][3][j]);
+			}
+			if (FE121_X_I_C[2][3][j] > 0.)
+			{
+				h_FE121_X_C_Q3->Fill(FE121_X_I_C[0][3][j], FE121_X_I_C[2][3][j]);
+			}
+			if (FE121_X_I_C2[2][3][j] > 0.)
+			{
+				h_FE121_X_C2_Q3->Fill(FE121_X_I_C2[0][3][j], FE121_X_I_C2[2][3][j]);
+			}
+			if (FE121_Y_I[2][3][j] > 0.)
+			{
+				h_FE121_Y_Q3->Fill(FE121_Y_I[0][3][j], FE121_Y_I[2][3][j]);
+			}
+			if (FE121_Y_I_C[2][3][j] > 0.)
+			{
+				h_FE121_Y_C_Q3->Fill(FE121_Y_I_C[0][3][j], FE121_Y_I_C[2][3][j]);
+			}
+			if (FE121_Y_I_C2[2][3][j] > 0.)
+			{
+				h_FE121_Y_C2_Q3->Fill(FE121_Y_I_C2[0][3][j], FE121_Y_I_C2[2][3][j]);
+			}
+			if (FE121_X_I[2][4][j] > 0.)
+			{
+				h_FE121_X_Q4->Fill(FE121_X_I[0][4][j], FE121_X_I[2][4][j]);
+			}
+			if (FE121_X_I_C[2][4][j] > 0.)
+			{
+				h_FE121_X_C_Q4->Fill(FE121_X_I_C[0][4][j], FE121_X_I_C[2][4][j]);
+			}
+			if (FE121_X_I_C2[2][4][j] > 0.)
+			{
+				h_FE121_X_C2_Q4->Fill(FE121_X_I_C2[0][0][j], FE121_X_I_C2[2][4][j]);
+			}
+			if (FE121_Y_I[2][4][j] > 0.)
+			{
+				h_FE121_Y_Q4->Fill(FE121_Y_I[0][4][j], FE121_Y_I[2][4][j]);
+			}
+			if (FE121_Y_I_C[2][4][j] > 0.)
+			{
+				h_FE121_Y_C_Q4->Fill(FE121_Y_I_C[0][4][j], FE121_Y_I_C[2][4][j]);
+			}
+			if (FE121_Y_I_C2[2][4][j] > 0.)
+			{
+				h_FE121_Y_C2_Q4->Fill(FE121_Y_I_C2[0][4][j], FE121_Y_I_C2[2][4][j]);
+			}
+			if (FE121_X_I[2][5][j] > 0.)
+			{
+				h_FE121_X_Q5->Fill(FE121_X_I[0][5][j], FE121_X_I[2][5][j]);
+			}
+			if (FE121_X_I_C[2][5][j] > 0.)
+			{
+				h_FE121_X_C_Q5->Fill(FE121_X_I_C[0][5][j], FE121_X_I_C[2][5][j]);
+			}
+			if (FE121_X_I_C2[2][5][j] > 0.)
+			{
+				h_FE121_X_C2_Q5->Fill(FE121_X_I_C2[0][0][j], FE121_X_I_C2[2][5][j]);
+			}
+			if (FE121_Y_I[2][5][j] > 0.)
+			{
+				h_FE121_Y_Q5->Fill(FE121_Y_I[0][5][j], FE121_Y_I[2][5][j]);
+			}
+			if (FE121_Y_I_C[2][5][j] > 0.)
+			{
+				h_FE121_Y_C_Q5->Fill(FE121_Y_I_C[0][5][j], FE121_Y_I_C[2][5][j]);
+			}
+			if (FE121_Y_I_C2[2][5][j] > 0.)
+			{
+				h_FE121_Y_C2_Q5->Fill(FE121_Y_I_C2[0][5][j], FE121_Y_I_C2[2][5][j]);
+			}
+			if (FE122_X_I[2][0][j] > 0.)
+			{
+				h_FE122_X_Q0->Fill(FE122_X_I[0][0][j], FE122_X_I[2][0][j]);
+			}
+			if (FE122_X_I_C[2][0][j] > 0.)
+			{
+				h_FE122_X_C_Q0->Fill(FE122_X_I_C[0][0][j], FE122_X_I_C[2][0][j]);
+			}
+			if (FE122_X_I_C2[2][0][j] > 0.)
+			{
+				h_FE122_X_C2_Q0->Fill(FE122_X_I_C2[0][0][j], FE122_X_I_C2[2][0][j]);
+			}
+			if (FE122_Y_I[2][0][j] > 0.)
+			{
+				h_FE122_Y_Q0->Fill(FE122_Y_I[0][0][j], FE122_Y_I[2][0][j]);
+			}
+			if (FE122_Y_I_C[2][0][j] > 0.)
+			{
+				h_FE122_Y_C_Q0->Fill(FE122_Y_I_C[0][0][j], FE122_Y_I_C[2][0][j]);
+			}
+			if (FE122_Y_I_C2[2][0][j] > 0.)
+			{
+				h_FE122_Y_C2_Q0->Fill(FE122_Y_I_C2[0][0][j], FE122_Y_I_C2[2][0][j]);
+			}
+			if (FE122_X_I[2][1][j] > 0.)
+			{
+				h_FE122_X_Q1->Fill(FE122_X_I[0][1][j], FE122_X_I[2][1][j]);
+			}
+			if (FE122_X_I_C[2][1][j] > 0.)
+			{
+				h_FE122_X_C_Q1->Fill(FE122_X_I_C[0][1][j], FE122_X_I_C[2][1][j]);
+			}
+			if (FE122_X_I_C2[2][1][j] > 0.)
+			{
+				h_FE122_X_C2_Q1->Fill(FE122_X_I_C2[0][0][j], FE122_X_I_C2[2][1][j]);
+			}
+			if (FE122_Y_I[2][1][j] > 0.)
+			{
+				h_FE122_Y_Q1->Fill(FE122_Y_I[0][1][j], FE122_Y_I[2][1][j]);
+			}
+			if (FE122_Y_I_C[2][1][j] > 0.)
+			{
+				h_FE122_Y_C_Q1->Fill(FE122_Y_I_C[0][1][j], FE122_Y_I_C[2][1][j]);
+			}
+			if (FE122_Y_I_C2[2][1][j] > 0.)
+			{
+				h_FE122_Y_C2_Q1->Fill(FE122_Y_I_C2[0][1][j], FE122_Y_I_C2[2][1][j]);
+			}
+			if (FE122_X_I[2][2][j] > 0.)
+			{
+				h_FE122_X_Q2->Fill(FE122_X_I[0][2][j], FE122_X_I[2][2][j]);
+			}
+			if (FE122_X_I_C[2][2][j] > 0.)
+			{
+				h_FE122_X_C_Q2->Fill(FE122_X_I_C[0][2][j], FE122_X_I_C[2][2][j]);
+			}
+			if (FE122_X_I_C2[2][2][j] > 0.)
+			{
+				h_FE122_X_C2_Q2->Fill(FE122_X_I_C2[0][2][j], FE122_X_I_C2[2][2][j]);
+			}
+			if (FE122_Y_I[2][2][j] > 0.)
+			{
+				h_FE122_Y_Q2->Fill(FE122_Y_I[0][2][j], FE122_Y_I[2][2][j]);
+			}
+			if (FE122_Y_I_C[2][2][j] > 0.)
+			{
+				h_FE122_Y_C_Q2->Fill(FE122_Y_I_C[0][2][j], FE122_Y_I_C[2][2][j]);
+			}
+			if (FE122_Y_I_C2[2][2][j] > 0.)
+			{
+				h_FE122_Y_C2_Q2->Fill(FE122_Y_I_C2[0][2][j], FE122_Y_I_C2[2][2][j]);
+			}
+			if (FE122_X_I[2][3][j] > 0.)
+			{
+				h_FE122_X_Q3->Fill(FE122_X_I[0][3][j], FE122_X_I[2][3][j]);
+			}
+			if (FE122_X_I_C[2][3][j] > 0.)
+			{
+				h_FE122_X_C_Q3->Fill(FE122_X_I_C[0][3][j], FE122_X_I_C[2][3][j]);
+			}
+			if (FE122_X_I_C2[2][3][j] > 0.)
+			{
+				h_FE122_X_C2_Q3->Fill(FE122_X_I_C2[0][3][j], FE122_X_I_C2[2][3][j]);
+			}
+			if (FE122_Y_I[2][3][j] > 0.)
+			{
+				h_FE122_Y_Q3->Fill(FE122_Y_I[0][3][j], FE122_Y_I[2][3][j]);
+			}
+			if (FE122_Y_I_C[2][3][j] > 0.)
+			{
+				h_FE122_Y_C_Q3->Fill(FE122_Y_I_C[0][3][j], FE122_Y_I_C[2][3][j]);
+			}
+			if (FE122_Y_I_C2[2][3][j] > 0.)
+			{
+				h_FE122_Y_C2_Q3->Fill(FE122_Y_I_C2[0][3][j], FE122_Y_I_C2[2][3][j]);
+			}
+			if (FE122_X_I[2][4][j] > 0.)
+			{
+				h_FE122_X_Q4->Fill(FE122_X_I[0][4][j], FE122_X_I[2][4][j]);
+			}
+			if (FE122_X_I_C[2][4][j] > 0.)
+			{
+				h_FE122_X_C_Q4->Fill(FE122_X_I_C[0][4][j], FE122_X_I_C[2][4][j]);
+			}
+			if (FE122_X_I_C2[2][4][j] > 0.)
+			{
+				h_FE122_X_C2_Q4->Fill(FE122_X_I_C2[0][0][j], FE122_X_I_C2[2][4][j]);
+			}
+			if (FE122_Y_I[2][4][j] > 0.)
+			{
+				h_FE122_Y_Q4->Fill(FE122_Y_I[0][4][j], FE122_Y_I[2][4][j]);
+			}
+			if (FE122_Y_I_C[2][4][j] > 0.)
+			{
+				h_FE122_Y_C_Q4->Fill(FE122_Y_I_C[0][4][j], FE122_Y_I_C[2][4][j]);
+			}
+			if (FE122_Y_I_C2[2][4][j] > 0.)
+			{
+				h_FE122_Y_C2_Q4->Fill(FE122_Y_I_C2[0][4][j], FE122_Y_I_C2[2][4][j]);
+			}
+			if (FE122_X_I[2][5][j] > 0.)
+			{
+				h_FE122_X_Q5->Fill(FE122_X_I[0][5][j], FE122_X_I[2][5][j]);
+			}
+			if (FE122_X_I_C[2][5][j] > 0.)
+			{
+				h_FE122_X_C_Q5->Fill(FE122_X_I_C[0][5][j], FE122_X_I_C[2][5][j]);
+			}
+			if (FE122_X_I_C2[2][5][j] > 0.)
+			{
+				h_FE122_X_C2_Q5->Fill(FE122_X_I_C2[0][0][j], FE122_X_I_C2[2][5][j]);
+			}
+			if (FE122_Y_I[2][5][j] > 0.)
+			{
+				h_FE122_Y_Q5->Fill(FE122_Y_I[0][5][j], FE122_Y_I[2][5][j]);
+			}
+			if (FE122_Y_I_C[2][5][j] > 0.)
+			{
+				h_FE122_Y_C_Q5->Fill(FE122_Y_I_C[0][5][j], FE122_Y_I_C[2][5][j]);
+			}
+			if (FE122_Y_I_C2[2][5][j] > 0.)
+			{
+				h_FE122_Y_C2_Q5->Fill(FE122_Y_I_C2[0][5][j], FE122_Y_I_C2[2][5][j]);
+			}
+
+			if (S11_X_I[2][0][j] > 0.)
+			{
+				h_S11_X_Q0->Fill(S11_X_I[0][0][j], S11_X_I[2][0][j]);
+			}
+			if (S11_X_I_C[2][0][j] > 0.)
+			{
+				h_S11_X_C_Q0->Fill(S11_X_I_C[0][0][j], S11_X_I_C[2][0][j]);
+			}
+			if (S11_X_I_C2[2][0][j] > 0.)
+			{
+				h_S11_X_C2_Q0->Fill(S11_X_I_C2[0][0][j], S11_X_I_C2[2][0][j]);
+			}
+			if (S11_Y_I[2][0][j] > 0.)
+			{
+				h_S11_Y_Q0->Fill(S11_Y_I[0][0][j], S11_Y_I[2][0][j]);
+			}
+			if (S11_Y_I_C[2][0][j] > 0.)
+			{
+				h_S11_Y_C_Q0->Fill(S11_Y_I_C[0][0][j], S11_Y_I_C[2][0][j]);
+			}
+			if (S11_Y_I_C2[2][0][j] > 0.)
+			{
+				h_S11_Y_C2_Q0->Fill(S11_Y_I_C2[0][0][j], S11_Y_I_C2[2][0][j]);
+			}
+			if (S11_X_I[2][1][j] > 0.)
+			{
+				h_S11_X_Q1->Fill(S11_X_I[0][1][j], S11_X_I[2][1][j]);
+			}
+			if (S11_X_I_C[2][1][j] > 0.)
+			{
+				h_S11_X_C_Q1->Fill(S11_X_I_C[0][1][j], S11_X_I_C[2][1][j]);
+			}
+			if (S11_X_I_C2[2][1][j] > 0.)
+			{
+				h_S11_X_C2_Q1->Fill(S11_X_I_C2[0][0][j], S11_X_I_C2[2][1][j]);
+			}
+			if (S11_Y_I[2][1][j] > 0.)
+			{
+				h_S11_Y_Q1->Fill(S11_Y_I[0][1][j], S11_Y_I[2][1][j]);
+			}
+			if (S11_Y_I_C[2][1][j] > 0.)
+			{
+				h_S11_Y_C_Q1->Fill(S11_Y_I_C[0][1][j], S11_Y_I_C[2][1][j]);
+			}
+			if (S11_Y_I_C2[2][1][j] > 0.)
+			{
+				h_S11_Y_C2_Q1->Fill(S11_Y_I_C2[0][1][j], S11_Y_I_C2[2][1][j]);
+			}
+			if (S11_X_I[2][2][j] > 0.)
+			{
+				h_S11_X_Q2->Fill(S11_X_I[0][2][j], S11_X_I[2][2][j]);
+			}
+			if (S11_X_I_C[2][2][j] > 0.)
+			{
+				h_S11_X_C_Q2->Fill(S11_X_I_C[0][2][j], S11_X_I_C[2][2][j]);
+			}
+			if (S11_X_I_C2[2][2][j] > 0.)
+			{
+				h_S11_X_C2_Q2->Fill(S11_X_I_C2[0][2][j], S11_X_I_C2[2][2][j]);
+			}
+			if (S11_Y_I[2][2][j] > 0.)
+			{
+				h_S11_Y_Q2->Fill(S11_Y_I[0][2][j], S11_Y_I[2][2][j]);
+			}
+			if (S11_Y_I_C[2][2][j] > 0.)
+			{
+				h_S11_Y_C_Q2->Fill(S11_Y_I_C[0][2][j], S11_Y_I_C[2][2][j]);
+			}
+			if (S11_Y_I_C2[2][2][j] > 0.)
+			{
+				h_S11_Y_C2_Q2->Fill(S11_Y_I_C2[0][2][j], S11_Y_I_C2[2][2][j]);
+			}
+			if (S11_X_I[2][3][j] > 0.)
+			{
+				h_S11_X_Q3->Fill(S11_X_I[0][3][j], S11_X_I[2][3][j]);
+			}
+			if (S11_X_I_C[2][3][j] > 0.)
+			{
+				h_S11_X_C_Q3->Fill(S11_X_I_C[0][3][j], S11_X_I_C[2][3][j]);
+			}
+			if (S11_X_I_C2[2][3][j] > 0.)
+			{
+				h_S11_X_C2_Q3->Fill(S11_X_I_C2[0][3][j], S11_X_I_C2[2][3][j]);
+			}
+			if (S11_Y_I[2][3][j] > 0.)
+			{
+				h_S11_Y_Q3->Fill(S11_Y_I[0][3][j], S11_Y_I[2][3][j]);
+			}
+			if (S11_Y_I_C[2][3][j] > 0.)
+			{
+				h_S11_Y_C_Q3->Fill(S11_Y_I_C[0][3][j], S11_Y_I_C[2][3][j]);
+			}
+			if (S11_Y_I_C2[2][3][j] > 0.)
+			{
+				h_S11_Y_C2_Q3->Fill(S11_Y_I_C2[0][3][j], S11_Y_I_C2[2][3][j]);
+			}
+			if (S11_X_I[2][4][j] > 0.)
+			{
+				h_S11_X_Q4->Fill(S11_X_I[0][4][j], S11_X_I[2][4][j]);
+			}
+			if (S11_X_I_C[2][4][j] > 0.)
+			{
+				h_S11_X_C_Q4->Fill(S11_X_I_C[0][4][j], S11_X_I_C[2][4][j]);
+			}
+			if (S11_X_I_C2[2][4][j] > 0.)
+			{
+				h_S11_X_C2_Q4->Fill(S11_X_I_C2[0][0][j], S11_X_I_C2[2][4][j]);
+			}
+			if (S11_Y_I[2][4][j] > 0.)
+			{
+				h_S11_Y_Q4->Fill(S11_Y_I[0][4][j], S11_Y_I[2][4][j]);
+			}
+			if (S11_Y_I_C[2][4][j] > 0.)
+			{
+				h_S11_Y_C_Q4->Fill(S11_Y_I_C[0][4][j], S11_Y_I_C[2][4][j]);
+			}
+			if (S11_Y_I_C2[2][4][j] > 0.)
+			{
+				h_S11_Y_C2_Q4->Fill(S11_Y_I_C2[0][4][j], S11_Y_I_C2[2][4][j]);
+			}
+			if (S11_X_I[2][5][j] > 0.)
+			{
+				h_S11_X_Q5->Fill(S11_X_I[0][5][j], S11_X_I[2][5][j]);
+			}
+			if (S11_X_I_C[2][5][j] > 0.)
+			{
+				h_S11_X_C_Q5->Fill(S11_X_I_C[0][5][j], S11_X_I_C[2][5][j]);
+			}
+			if (S11_X_I_C2[2][5][j] > 0.)
+			{
+				h_S11_X_C2_Q5->Fill(S11_X_I_C2[0][0][j], S11_X_I_C2[2][5][j]);
+			}
+			if (S11_Y_I[2][5][j] > 0.)
+			{
+				h_S11_Y_Q5->Fill(S11_Y_I[0][5][j], S11_Y_I[2][5][j]);
+			}
+			if (S11_Y_I_C[2][5][j] > 0.)
+			{
+				h_S11_Y_C_Q5->Fill(S11_Y_I_C[0][5][j], S11_Y_I_C[2][5][j]);
+			}
+			if (S11_Y_I_C2[2][5][j] > 0.)
+			{
+				h_S11_Y_C2_Q5->Fill(S11_Y_I_C2[0][5][j], S11_Y_I_C2[2][5][j]);
+			}
+			if (S12_X_I[2][0][j] > 0.)
+			{
+				h_S12_X_Q0->Fill(S12_X_I[0][0][j], S12_X_I[2][0][j]);
+			}
+			if (S12_X_I_C[2][0][j] > 0.)
+			{
+				h_S12_X_C_Q0->Fill(S12_X_I_C[0][0][j], S12_X_I_C[2][0][j]);
+			}
+			if (S12_X_I_C2[2][0][j] > 0.)
+			{
+				h_S12_X_C2_Q0->Fill(S12_X_I_C2[0][0][j], S12_X_I_C2[2][0][j]);
+			}
+			if (S12_Y_I[2][0][j] > 0.)
+			{
+				h_S12_Y_Q0->Fill(S12_Y_I[0][0][j], S12_Y_I[2][0][j]);
+			}
+			if (S12_Y_I_C[2][0][j] > 0.)
+			{
+				h_S12_Y_C_Q0->Fill(S12_Y_I_C[0][0][j], S12_Y_I_C[2][0][j]);
+			}
+			if (S12_Y_I_C2[2][0][j] > 0.)
+			{
+				h_S12_Y_C2_Q0->Fill(S12_Y_I_C2[0][0][j], S12_Y_I_C2[2][0][j]);
+			}
+			if (S12_X_I[2][1][j] > 0.)
+			{
+				h_S12_X_Q1->Fill(S12_X_I[0][1][j], S12_X_I[2][1][j]);
+			}
+			if (S12_X_I_C[2][1][j] > 0.)
+			{
+				h_S12_X_C_Q1->Fill(S12_X_I_C[0][1][j], S12_X_I_C[2][1][j]);
+			}
+			if (S12_X_I_C2[2][1][j] > 0.)
+			{
+				h_S12_X_C2_Q1->Fill(S12_X_I_C2[0][0][j], S12_X_I_C2[2][1][j]);
+			}
+			if (S12_Y_I[2][1][j] > 0.)
+			{
+				h_S12_Y_Q1->Fill(S12_Y_I[0][1][j], S12_Y_I[2][1][j]);
+			}
+			if (S12_Y_I_C[2][1][j] > 0.)
+			{
+				h_S12_Y_C_Q1->Fill(S12_Y_I_C[0][1][j], S12_Y_I_C[2][1][j]);
+			}
+			if (S12_Y_I_C2[2][1][j] > 0.)
+			{
+				h_S12_Y_C2_Q1->Fill(S12_Y_I_C2[0][1][j], S12_Y_I_C2[2][1][j]);
+			}
+			if (S12_X_I[2][2][j] > 0.)
+			{
+				h_S12_X_Q2->Fill(S12_X_I[0][2][j], S12_X_I[2][2][j]);
+			}
+			if (S12_X_I_C[2][2][j] > 0.)
+			{
+				h_S12_X_C_Q2->Fill(S12_X_I_C[0][2][j], S12_X_I_C[2][2][j]);
+			}
+			if (S12_X_I_C2[2][2][j] > 0.)
+			{
+				h_S12_X_C2_Q2->Fill(S12_X_I_C2[0][2][j], S12_X_I_C2[2][2][j]);
+			}
+			if (S12_Y_I[2][2][j] > 0.)
+			{
+				h_S12_Y_Q2->Fill(S12_Y_I[0][2][j], S12_Y_I[2][2][j]);
+			}
+			if (S12_Y_I_C[2][2][j] > 0.)
+			{
+				h_S12_Y_C_Q2->Fill(S12_Y_I_C[0][2][j], S12_Y_I_C[2][2][j]);
+			}
+			if (S12_Y_I_C2[2][2][j] > 0.)
+			{
+				h_S12_Y_C2_Q2->Fill(S12_Y_I_C2[0][2][j], S12_Y_I_C2[2][2][j]);
+			}
+			if (S12_X_I[2][3][j] > 0.)
+			{
+				h_S12_X_Q3->Fill(S12_X_I[0][3][j], S12_X_I[2][3][j]);
+			}
+			if (S12_X_I_C[2][3][j] > 0.)
+			{
+				h_S12_X_C_Q3->Fill(S12_X_I_C[0][3][j], S12_X_I_C[2][3][j]);
+			}
+			if (S12_X_I_C2[2][3][j] > 0.)
+			{
+				h_S12_X_C2_Q3->Fill(S12_X_I_C2[0][3][j], S12_X_I_C2[2][3][j]);
+			}
+			if (S12_Y_I[2][3][j] > 0.)
+			{
+				h_S12_Y_Q3->Fill(S12_Y_I[0][3][j], S12_Y_I[2][3][j]);
+			}
+			if (S12_Y_I_C[2][3][j] > 0.)
+			{
+				h_S12_Y_C_Q3->Fill(S12_Y_I_C[0][3][j], S12_Y_I_C[2][3][j]);
+			}
+			if (S12_Y_I_C2[2][3][j] > 0.)
+			{
+				h_S12_Y_C2_Q3->Fill(S12_Y_I_C2[0][3][j], S12_Y_I_C2[2][3][j]);
+			}
+			if (S12_X_I[2][4][j] > 0.)
+			{
+				h_S12_X_Q4->Fill(S12_X_I[0][4][j], S12_X_I[2][4][j]);
+			}
+			if (S12_X_I_C[2][4][j] > 0.)
+			{
+				h_S12_X_C_Q4->Fill(S12_X_I_C[0][4][j], S12_X_I_C[2][4][j]);
+			}
+			if (S12_X_I_C2[2][4][j] > 0.)
+			{
+				h_S12_X_C2_Q4->Fill(S12_X_I_C2[0][0][j], S12_X_I_C2[2][4][j]);
+			}
+			if (S12_Y_I[2][4][j] > 0.)
+			{
+				h_S12_Y_Q4->Fill(S12_Y_I[0][4][j], S12_Y_I[2][4][j]);
+			}
+			if (S12_Y_I_C[2][4][j] > 0.)
+			{
+				h_S12_Y_C_Q4->Fill(S12_Y_I_C[0][4][j], S12_Y_I_C[2][4][j]);
+			}
+			if (S12_Y_I_C2[2][4][j] > 0.)
+			{
+				h_S12_Y_C2_Q4->Fill(S12_Y_I_C2[0][4][j], S12_Y_I_C2[2][4][j]);
+			}
+			if (S12_X_I[2][5][j] > 0.)
+			{
+				h_S12_X_Q5->Fill(S12_X_I[0][5][j], S12_X_I[2][5][j]);
+			}
+			if (S12_X_I_C[2][5][j] > 0.)
+			{
+				h_S12_X_C_Q5->Fill(S12_X_I_C[0][5][j], S12_X_I_C[2][5][j]);
+			}
+			if (S12_X_I_C2[2][5][j] > 0.)
+			{
+				h_S12_X_C2_Q5->Fill(S12_X_I_C2[0][0][j], S12_X_I_C2[2][5][j]);
+			}
+			if (S12_Y_I[2][5][j] > 0.)
+			{
+				h_S12_Y_Q5->Fill(S12_Y_I[0][5][j], S12_Y_I[2][5][j]);
+			}
+			if (S12_Y_I_C[2][5][j] > 0.)
+			{
+				h_S12_Y_C_Q5->Fill(S12_Y_I_C[0][5][j], S12_Y_I_C[2][5][j]);
+			}
+			if (S12_Y_I_C2[2][5][j] > 0.)
+			{
+				h_S12_Y_C2_Q5->Fill(S12_Y_I_C2[0][5][j], S12_Y_I_C2[2][5][j]);
+			}
+
+			h_FE91_X->Fill(FE91_X[j]);
+			h_FE91_X_C->Fill(FE91_X_C[j]);
+			h_FE91_X_C2->Fill(FE91_X_C2[j]);
+			h_FE91_X_M->Fill(FE91_X_M[j]);
+			h_FE91_X_M2->Fill(FE91_X_M2[j]);
+			h_FE91_Y->Fill(FE91_Y[j]);
+			h_FE91_Y_C->Fill(FE91_Y_C[j]);
+			h_FE91_Y_C2->Fill(FE91_Y_C2[j]);
+			h_FE91_Y_M->Fill(FE91_Y_M[j]);
+			h_FE91_Y_M2->Fill(FE91_Y_M2[j]);
+			h_FE121_X->Fill(FE121_X[j]);
+			h_FE121_X_C->Fill(FE121_X_C[j]);
+			h_FE121_X_C2->Fill(FE121_X_C2[j]);
+			h_FE121_X_M->Fill(FE121_X_M[j]);
+			h_FE121_X_M2->Fill(FE121_X_M2[j]);
+			h_FE121_Y->Fill(FE121_Y[j]);
+			h_FE121_Y_C->Fill(FE121_Y_C[j]);
+			h_FE121_Y_C2->Fill(FE121_Y_C2[j]);
+			h_FE121_Y_M->Fill(FE121_Y_M[j]);
+			h_FE121_Y_M2->Fill(FE121_Y_M2[j]);
+			h_S11_X->Fill(S11_X[j]);
+			h_S11_X_C->Fill(S11_X_C[j]);
+			h_S11_X_C2->Fill(S11_X_C2[j]);
+			h_S11_X_M->Fill(S11_X_M[j]);
+			h_S11_X_M2->Fill(S11_X_M2[j]);
+			h_S11_Y->Fill(S11_Y[j]);
+			h_S11_Y_C->Fill(S11_Y_C[j]);
+			h_S11_Y_C2->Fill(S11_Y_C2[j]);
+			h_S11_Y_M->Fill(S11_Y_M[j]);
+			h_S11_Y_M2->Fill(S11_Y_M2[j]);
+
+			h_FE92_X->Fill(FE92_X[j]);
+			h_FE92_X_C->Fill(FE92_X_C[j]);
+			h_FE92_X_C2->Fill(FE92_X_C2[j]);
+			h_FE92_X_M->Fill(FE92_X_M[j]);
+			h_FE92_X_M2->Fill(FE92_X_M2[j]);
+			h_FE92_Y->Fill(FE92_Y[j]);
+			h_FE92_Y_C->Fill(FE92_Y_C[j]);
+			h_FE92_Y_C2->Fill(FE92_Y_C2[j]);
+			h_FE92_Y_M->Fill(FE92_Y_M[j]);
+			h_FE92_Y_M2->Fill(FE92_Y_M2[j]);
+			h_FE122_X->Fill(FE122_X[j]);
+			h_FE122_X_C->Fill(FE122_X_C[j]);
+			h_FE122_X_C2->Fill(FE122_X_C2[j]);
+			h_FE122_X_M->Fill(FE122_X_M[j]);
+			h_FE122_X_M2->Fill(FE122_X_M2[j]);
+			h_FE122_Y->Fill(FE122_Y[j]);
+			h_FE122_Y_C->Fill(FE122_Y_C[j]);
+			h_FE122_Y_C2->Fill(FE122_Y_C2[j]);
+			h_FE122_Y_M->Fill(FE122_Y_M[j]);
+			h_FE122_Y_M2->Fill(FE122_Y_M2[j]);
+			h_S12_X->Fill(S12_X[j]);
+			h_S12_X_C->Fill(S12_X_C[j]);
+			h_S12_X_C2->Fill(S12_X_C2[j]);
+			h_S12_X_M->Fill(S12_X_M[j]);
+			h_S12_X_M2->Fill(S12_X_M2[j]);
+			h_S12_Y->Fill(S12_Y[j]);
+			h_S12_Y_C->Fill(S12_Y_C[j]);
+			h_S12_Y_C2->Fill(S12_Y_C2[j]);
+			h_S12_Y_M->Fill(S12_Y_M[j]);
+			h_S12_Y_M2->Fill(S12_Y_M2[j]);
+
+			h_FE9_X->Fill(FE9_X[j]);
+			h_FE9_X_C->Fill(FE9_X_C[j]);
+			h_FE9_X_C2->Fill(FE9_X_C2[j]);
+			h_FE9_X_M->Fill(FE9_X_M[j]);
+			h_FE9_X_M2->Fill(FE9_X_M2[j]);
+			h_FE9_Y->Fill(FE9_Y[j]);
+			h_FE9_Y_C->Fill(FE9_Y_C[j]);
+			h_FE9_Y_C2->Fill(FE9_Y_C2[j]);
+			h_FE9_Y_M->Fill(FE9_Y_M[j]);
+			h_FE9_Y_M2->Fill(FE9_Y_M2[j]);
+			h_FE12_X->Fill(FE12_X[j]);
+			h_FE12_X_C->Fill(FE12_X_C[j]);
+			h_FE12_X_C2->Fill(FE12_X_C2[j]);
+			h_FE12_X_M->Fill(FE12_X_M[j]);
+			h_FE12_X_M2->Fill(FE12_X_M2[j]);
+			h_FE12_Y->Fill(FE12_Y[j]);
+			h_FE12_Y_C->Fill(FE12_Y_C[j]);
+			h_FE12_Y_C2->Fill(FE12_Y_C2[j]);
+			h_FE12_Y_M->Fill(FE12_Y_M[j]);
+			h_FE12_Y_M2->Fill(FE12_Y_M2[j]);
+			h_S1_X->Fill(S1_X[j]);
+			h_S1_X_C->Fill(S1_X_C[j]);
+			h_S1_X_C2->Fill(S1_X_C2[j]);
+			h_S1_X_M->Fill(S1_X_M[j]);
+			h_S1_X_M2->Fill(S1_X_M2[j]);
+			h_S1_Y->Fill(S1_Y[j]);
+			h_S1_Y_C->Fill(S1_Y_C[j]);
+			h_S1_Y_C2->Fill(S1_Y_C2[j]);
+			h_S1_Y_M->Fill(S1_Y_M[j]);
+			h_S1_Y_M2->Fill(S1_Y_M2[j]);
+
+			if (FE9_X[j] > -500)
+			{
+				h_FE9_A->Fill(FE9_A[j] * 1000.);
+			}
+			if (FE9_X_C[j] > -500)
+			{
+				h_FE9_A_C->Fill(FE9_A_C[j] * 1000.);
+			}
+			if (FE9_X_C2[j] > -500)
+			{
+				h_FE9_A_C2->Fill(FE9_A_C2[j] * 1000.);
+			}
+			if (FE9_X_M[j] > -500)
+			{
+				h_FE9_A_M->Fill(FE9_A_M[j] * 1000.);
+			}
+			if (FE9_X_M2[j] > -500)
+			{
+				h_FE9_A_M2->Fill(FE9_A_M2[j] * 1000.);
+			}
+
+			if (FE9_Y[j] > -500)
+			{
+				h_FE9_B->Fill(FE9_B[j] * 1000.);
+			}
+			if (FE9_Y_C[j] > -500)
+			{
+				h_FE9_B_C->Fill(FE9_B_C[j] * 1000.);
+			}
+			if (FE9_Y_C2[j] > -500)
+			{
+				h_FE9_B_C2->Fill(FE9_B_C2[j] * 1000.);
+			}
+			if (FE9_Y_M[j] > -500)
+			{
+				h_FE9_B_M->Fill(FE9_B_M[j] * 1000.);
+			}
+			if (FE9_Y_M2[j] > -500)
+			{
+				h_FE9_B_M2->Fill(FE9_B_M2[j] * 1000.);
+			}
+
+			if (FE12_X[j] > -500)
+			{
+				h_FE12_A->Fill(FE12_A[j] * 1000.);
+			}
+			if (FE12_X_C[j] > -500)
+			{
+				h_FE12_A_C->Fill(FE12_A_C[j] * 1000.);
+			}
+			if (FE12_X_C2[j] > -500)
+			{
+				h_FE12_A_C2->Fill(FE12_A_C2[j] * 1000.);
+			}
+			if (FE12_X_M[j] > -500)
+			{
+				h_FE12_A_M->Fill(FE12_A_M[j] * 1000.);
+			}
+			if (FE12_X_M2[j] > -500)
+			{
+				h_FE12_A_M2->Fill(FE12_A_M2[j] * 1000.);
+			}
+
+			if (FE12_Y[j] > -500)
+			{
+				h_FE12_B->Fill(FE12_B[j] * 1000.);
+			}
+			if (FE12_Y_C[j] > -500)
+			{
+				h_FE12_B_C->Fill(FE12_B_C[j] * 1000.);
+			}
+			if (FE12_Y_C2[j] > -500)
+			{
+				h_FE12_B_C2->Fill(FE12_B_C2[j] * 1000.);
+			}
+			if (FE12_Y_M[j] > -500)
+			{
+				h_FE12_B_M->Fill(FE12_B_M[j] * 1000.);
+			}
+			if (FE12_Y_M2[j] > -500)
+			{
+				h_FE12_B_M2->Fill(FE12_B_M2[j] * 1000.);
+			}
+
+			if (S1_X[j] > -500)
+			{
+				h_S1_A->Fill(S1_A[j] * 1000.);
+			}
+			if (S1_X_C[j] > -500)
+			{
+				h_S1_A_C->Fill(S1_A_C[j] * 1000.);
+			}
+			if (S1_X_C2[j] > -500)
+			{
+				h_S1_A_C2->Fill(S1_A_C2[j] * 1000.);
+			}
+			if (S1_X_M[j] > -500)
+			{
+				h_S1_A_M->Fill(S1_A_M[j] * 1000.);
+			}
+			if (S1_X_M2[j] > -500)
+			{
+				h_S1_A_M2->Fill(S1_A_M2[j] * 1000.);
+			}
+
+			if (S1_Y[j] > -500)
+			{
+				h_S1_B->Fill(S1_B[j] * 1000.);
+			}
+			if (S1_Y_C[j] > -500)
+			{
+				h_S1_B_C->Fill(S1_B_C[j] * 1000.);
+			}
+			if (S1_Y_C2[j] > -500)
+			{
+				h_S1_B_C2->Fill(S1_B_C2[j] * 1000.);
+			}
+			if (S1_Y_M[j] > -500)
+			{
+				h_S1_B_M->Fill(S1_B_M[j] * 1000.);
+			}
+			if (S1_Y_M2[j] > -500)
+			{
+				h_S1_B_M2->Fill(S1_B_M2[j] * 1000.);
+			}
+		}
+		tree_new->Fill();
+	}
+
+	// cout << endl;
+	// cout << "Events with F3 diamond info = " << F3_E_Counter << " (" << F3_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the F3 diamond is fired = " << F3_Counter << " ,Times per event = " << F3_Counter*1./b  << endl;
+
+	// cout << endl;
+	// cout << "Events with SRPPAC FE91 anode info = " << FE91_A_E_Counter << " (" << FE91_A_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE91 anode is fired = " << FE91_A_Counter << " ,Times per event = " << FE91_A_Counter*1./b  << endl;
+	// cout << "Events with SRPPAC FE92 anode info = " << FE92_A_E_Counter << " (" << FE92_A_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE92 anode is fired = " << FE92_A_Counter << " ,Times per event = " << FE92_A_Counter*1./b  << endl;
+	// cout << "Ions identified at FE9 through anode information = " << FE9_A_Counter << " ,Times per event = " << FE9_A_Counter*1./b  << endl;
+	// cout << "Ions identified at F3-FE9 through anode information = " << F3_FE9_A_Counter << " ,Times per event = " << F3_FE9_A_Counter*1./b  << endl;
+
+	// cout << endl;
+	// cout << "Events with SRPPAC FE91 X catode info = " << FE91_X_E_Counter << " (" << FE91_X_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE91 X catode is fired = " << FE91_X_Counter << " ,Times per event = " << FE91_X_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC FE91 X catode info = " << FE91_XA_E_Counter << " ,Times per event = " << (FE91_XA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC FE91 X catode is fired = " << FE91_XA_Counter + FE91_XA_E_Counter << " ,Times per event = " << (FE91_XA_Counter + FE91_XA_E_Counter)*1./b  << endl;
+	// cout << "Events with SRPPAC FE91 Y catode info = " << FE91_Y_E_Counter << " (" << FE91_Y_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE91 Y catode is fired = " << FE91_Y_Counter << " ,Times per event = " << FE91_Y_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC FE91 Y catode info = " << FE91_YA_E_Counter << " ,Times per event = " << (FE91_YA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC FE91 Y catode is fired = " << FE91_YA_Counter + FE91_YA_E_Counter << " ,Times per event = " << (FE91_YA_Counter + FE91_YA_E_Counter)*1./b  << endl;
+
+	// cout << endl;
+	// cout << "Events with SRPPAC FE92 X catode info = " << FE92_X_E_Counter << " (" << FE92_X_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE92 X catode is fired = " << FE92_X_Counter << " ,Times per event = " << FE92_X_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC FE92 X catode info = " << FE92_XA_E_Counter << " ,Times per event = " << (FE92_XA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC FE92 X catode is fired = " << FE92_XA_Counter + FE92_XA_E_Counter << " ,Times per event = " << (FE92_XA_Counter + FE92_XA_E_Counter)*1./b  << endl;
+	// cout << "Events with SRPPAC FE92 Y catode info = " << FE92_Y_E_Counter << " (" << FE92_Y_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE92 Y catode is fired = " << FE92_Y_Counter << " ,Times per event = " << FE92_Y_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC FE92 Y catode info = " << FE92_YA_E_Counter << " ,Times per event = " << (FE92_YA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC FE92 Y catode is fired = " << FE92_YA_Counter + FE92_YA_E_Counter << " ,Times per event = " << (FE92_YA_Counter + FE92_YA_E_Counter)*1./b  << endl;
+
+	// cout << endl;
+	// cout << "Strips identified with SRPPAC FE91 X catode which match strips in FE91 Y catode  = " << FE91_XY_Counter << " ,Times per event = " << (FE91_XY_Counter)*1./b << endl;
+	// cout << "Strips identified with SRPPAC FE91 Y catode which match strips in FE91 X catode  = " << FE91_YX_Counter << " ,Times per event = " << (FE91_YX_Counter)*1./b << endl;
+	// cout << "Strips identified with SRPPAC FE92 X catode which match strips in FE92 Y catode  = " << FE92_XY_Counter << " ,Times per event = " << (FE92_XY_Counter)*1./b << endl;
+	// cout << "Strips identified with SRPPAC FE92 Y catode which match strips in FE92 X catode  = " << FE92_YX_Counter << " ,Times per event = " << (FE92_YX_Counter)*1./b << endl;
+
+	// cout << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC FE91 X catode = " << FE91_X_Q_Counter << " ,Times per event = " << (FE91_X_Q_Counter)*1./b << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC FE91 Y catode = " << FE91_Y_Q_Counter << " ,Times per event = " << (FE91_Y_Q_Counter)*1./b << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC FE92 X catode = " << FE92_X_Q_Counter << " ,Times per event = " << (FE92_X_Q_Counter)*1./b << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC FE92 Y catode = " << FE92_Y_Q_Counter << " ,Times per event = " << (FE92_Y_Q_Counter)*1./b << endl;
+
+	// cout << endl;
+	// cout << "Events with SRPPAC FE121 anode info = " << FE121_A_E_Counter << " (" << FE121_A_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE121 anode is fired = " << FE121_A_Counter << " ,Times per event = " << FE121_A_Counter*1./b  << endl;
+	// cout << "Events with SRPPAC FE122 anode info = " << FE122_A_E_Counter << " (" << FE122_A_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE122 anode is fired = " << FE122_A_Counter << " ,Times per event = " << FE122_A_Counter*1./b  << endl;
+	// cout << "Ions identified at FE12 through anode information = " << FE12_A_Counter << " ,Times per event = " << FE12_A_Counter*1./b  << endl;
+	// cout << "Ions identified at F3-FE12 through anode information = " << F3_FE12_A_Counter << " ,Times per event = " << F3_FE12_A_Counter*1./b  << endl;
+
+	// cout << endl;
+	// cout << "Events with SRPPAC FE121 X catode info = " << FE121_X_E_Counter << " (" << FE121_X_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE121 X catode is fired = " << FE121_X_Counter << " ,Times per event = " << FE121_X_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC FE121 X catode info = " << FE121_XA_E_Counter << " ,Times per event = " << (FE121_XA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC FE121 X catode is fired = " << FE121_XA_Counter + FE121_XA_E_Counter << " ,Times per event = " << (FE121_XA_Counter + FE121_XA_E_Counter)*1./b  << endl;
+	// cout << "Events with SRPPAC FE121 Y catode info = " << FE121_Y_E_Counter << " (" << FE121_Y_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE121 Y catode is fired = " << FE121_Y_Counter << " ,Times per event = " << FE121_Y_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC FE121 Y catode info = " << FE121_YA_E_Counter << " ,Times per event = " << (FE121_YA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC FE121 Y catode is fired = " << FE121_YA_Counter + FE121_YA_E_Counter << " ,Times per event = " << (FE121_YA_Counter + FE121_YA_E_Counter)*1./b  << endl;
+
+	// cout << endl;
+	// cout << "Events with SRPPAC FE122 X catode info = " << FE122_X_E_Counter << " (" << FE122_X_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE122 X catode is fired = " << FE122_X_Counter << " ,Times per event = " << FE122_X_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC FE122 X catode info = " << FE122_XA_E_Counter << " ,Times per event = " << (FE122_XA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC FE122 X catode is fired = " << FE122_XA_Counter + FE122_XA_E_Counter << " ,Times per event = " << (FE122_XA_Counter + FE122_XA_E_Counter)*1./b  << endl;
+	// cout << "Events with SRPPAC FE122 Y catode info = " << FE122_Y_E_Counter << " (" << FE122_Y_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC FE122 Y catode is fired = " << FE122_Y_Counter << " ,Times per event = " << FE122_Y_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC FE122 Y catode info = " << FE122_YA_E_Counter << " ,Times per event = " << (FE122_YA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC FE122 Y catode is fired = " << FE122_YA_Counter + FE122_YA_E_Counter << " ,Times per event = " << (FE122_YA_Counter + FE122_YA_E_Counter)*1./b  << endl;
+
+	// cout << endl;
+	// cout << "Strips identified with SRPPAC FE121 X catode which match strips in FE121 Y catode  = " << FE121_XY_Counter << " ,Times per event = " << (FE121_XY_Counter)*1./b << endl;
+	// cout << "Strips identified with SRPPAC FE121 Y catode which match strips in FE121 X catode  = " << FE121_YX_Counter << " ,Times per event = " << (FE121_YX_Counter)*1./b << endl;
+	// cout << "Strips identified with SRPPAC FE122 X catode which match strips in FE122 Y catode  = " << FE122_XY_Counter << " ,Times per event = " << (FE122_XY_Counter)*1./b << endl;
+	// cout << "Strips identified with SRPPAC FE122 Y catode which match strips in FE122 X catode  = " << FE122_YX_Counter << " ,Times per event = " << (FE122_YX_Counter)*1./b << endl;
+
+	// cout << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC FE121 X catode = " << FE121_X_Q_Counter << " ,Times per event = " << (FE121_X_Q_Counter)*1./b << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC FE121 Y catode = " << FE121_Y_Q_Counter << " ,Times per event = " << (FE121_Y_Q_Counter)*1./b << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC FE122 X catode = " << FE122_X_Q_Counter << " ,Times per event = " << (FE122_X_Q_Counter)*1./b << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC FE122 Y catode = " << FE122_Y_Q_Counter << " ,Times per event = " << (FE122_Y_Q_Counter)*1./b << endl;
+
+	// cout << endl;
+	// cout << "Events with SRPPAC S11 anode info = " << S11_A_E_Counter << " (" << S11_A_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC S11 anode is fired = " << S11_A_Counter << " ,Times per event = " << S11_A_Counter*1./b  << endl;
+	// cout << "Events with SRPPAC S12 anode info = " << S12_A_E_Counter << " (" << S12_A_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC S12 anode is fired = " << S12_A_Counter << " ,Times per event = " << S12_A_Counter*1./b  << endl;
+	// cout << <"Ions identified at S1 through anode information = " << S1_A_Counter << " ,Times per event = " << S1_A_Counter*1./b  << endl;
+	// cout << "Ions identified at F3-S1 through anode information = " << F3_S1_A_Counter << " ,Times per event = " << F3_S1_A_Counter*1./b  << endl;
+
+	// cout << endl;
+	// cout << "Events with SRPPAC S11 X catode info = " << S11_X_E_Counter << " (" << S11_X_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC S11 X catode is fired = " << S11_X_Counter << " ,Times per event = " << S11_X_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC S11 X catode info = " << S11_XA_E_Counter << " ,Times per event = " << (S11_XA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC S11 X catode is fired = " << S11_XA_Counter + S11_XA_E_Counter << " ,Times per event = " << (S11_XA_Counter + S11_XA_E_Counter)*1./b  << endl;
+	// cout << "Events with SRPPAC S11 Y catode info = " << S11_Y_E_Counter << " (" << S11_Y_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC S11 Y catode is fired = " << S11_Y_Counter << " ,Times per event = " << S11_Y_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC S11 Y catode info = " << S11_YA_E_Counter << " ,Times per event = " << (S11_YA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC S11 Y catode is fired = " << S11_YA_Counter + S11_YA_E_Counter << " ,Times per event = " << (S11_YA_Counter + S11_YA_E_Counter)*1./b  << endl;
+
+	// cout << endl;
+	// cout << "Events with SRPPAC S12 X catode info = " << S12_X_E_Counter << " (" << S12_X_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC S12 X catode is fired = " << S12_X_Counter << " ,Times per event = " << S12_X_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC S12 X catode info = " << S12_XA_E_Counter << " ,Times per event = " << (S12_XA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC S12 X catode is fired = " << S12_XA_Counter + S12_XA_E_Counter << " ,Times per event = " << (S12_XA_Counter + S12_XA_E_Counter)*1./b  << endl;
+	// cout << "Events with SRPPAC S12 Y catode info = " << S12_Y_E_Counter << " (" << S12_Y_E_Counter*1./b*100. << " %)" << endl;
+	// cout << "Times the SRPPAC S12 Y catode is fired = " << S12_Y_Counter << " ,Times per event = " << S12_Y_Counter*1./b  << endl;
+	// cout << "Individual ions identified with SRPPAC S12 Y catode info = " << S12_YA_E_Counter << " ,Times per event = " << (S12_YA_E_Counter)*1./b << endl;
+	// cout << "Times for anode-identified ions the SRPPAC S12 Y catode is fired = " << S12_YA_Counter + S12_YA_E_Counter << " ,Times per event = " << (S12_YA_Counter + S12_YA_E_Counter)*1./b  << endl;
+
+	// cout << endl;
+	// cout << "Strips identified with SRPPAC S11 X catode which match strips in S11 Y catode  = " << S11_XY_Counter << " ,Times per event = " << (S11_XY_Counter)*1./b << endl;
+	// cout << "Strips identified with SRPPAC S11 Y catode which match strips in S11 X catode  = " << S11_YX_Counter << " ,Times per event = " << (S11_YX_Counter)*1./b << endl;
+	// cout << "Strips identified with SRPPAC S12 X catode which match strips in S12 Y catode  = " << S12_XY_Counter << " ,Times per event = " << (S12_XY_Counter)*1./b << endl;
+	// cout << "Strips identified with SRPPAC S12 Y catode which match strips in S12 X catode  = " << S12_YX_Counter << " ,Times per event = " << (S12_YX_Counter)*1./b << endl;
+
+	// cout << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC S11 X catode   = " << S11_X_Q_Counter << " ,Times per event = " << (S11_X_Q_Counter)*1./b << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC S11 Y catode   = " << S11_Y_Q_Counter << " ,Times per event = " << (S11_Y_Q_Counter)*1./b << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC S12 X catode   = " << S12_X_Q_Counter << " ,Times per event = " << (S12_X_Q_Counter)*1./b << endl;
+	// cout << "Ions where Q0 and Q1 are neightbours for SRPPAC S12 Y catode   = " << S12_Y_Q_Counter << " ,Times per event = " << (S12_Y_Q_Counter)*1./b << endl;
+
+	// cout << endl;
+	// cout << "FE9-FE12 transmission (anode info) = " << F3_FE12_A_Counter*1./F3_FE9_A_Counter*100. << "%" << endl;
+	// cout << "FE9-S1 transmission (anode info) = " << F3_S1_A_Counter*1./F3_FE9_A_Counter*100. << "%" << endl;
+	// cout << "FE12-S1 transmission (anode info) = " << F3_S1_A_Counter*1./F3_FE12_A_Counter*100. << "%" << endl;
+
+	// cout << "Excitation Energy = " << f_Excitation_Energy(6,129.46125*PI/180,16,0) << endl;
+	// cout << "Excitation Energy = " << f_Excitation_Energy(3.5017982137749,119.84339756068*PI/180,14,0) << endl;
+	// cout << "Excitation Energy = " << f_Excitation_Energy(2.2688689527617,137.12902711708 *PI/180,14,0) << endl;
+	// cout << "Excitation Energy = " << f_Excitation_Energy(1.6804706980418,163.24086256524*PI/180,14,0) << endl;
+
+	// FE121_X = 0;
+	// FE121_Y = 0;
+
+	// cout << f_Theta(-55.71, -31.75, -229.22, 1.03 - FE121_X, 0.18 - FE121_Y, FE12_S0) << endl;
+
+	// cout << "i = " << i << endl;
+	// cout << "b = " << b*0.99 << endl;
+
+	// We create a new output root file for our analisis with output histograms.
+	//   TFile* ofile = new TFile("/home/sh12s24/art_analysis/user/carlos/output/Analysis/902histos.root","recreate");
+	TFile *ofile = new TFile("/u/ddas/software/work/artemis-oedo/output/Analysis/902histos.root", "recreate"); // for lxpool artemis installation
+	// string output = "/home/sh12s24/art_analysis/user/carlos/output/Analysis/sharaq12histos_" + to_string(frun) + "new.root";
+	// TFile *ofile = new TFile(output.c_str(),"recreate");
+	hlist->Write();
+	ofile->Close();
+	ofile_new->cd();
+	tree_new->Write();
+	ofile_new->Close();
+
+	cout << endl;
+	cout << "END" << endl;
+	cout << endl;
+}
+
+// Definition of the functions used in the analysis.
+double f_SRPPAC_gain(int a, int b, int c)
+{
+	FILE *myfile;
+	double myvariable;
+	string SRPPAC;
+	string sector;
+	double output;
+	int j;
+	int k;
+
+	if (b == 0)
+	{
+		SRPPAC = "FE91";
+	}
+	if (b == 1)
+	{
+		SRPPAC = "FE92";
+	}
+	if (b == 2)
+	{
+		SRPPAC = "FE121";
+	}
+	if (b == 3)
+	{
+		SRPPAC = "FE122";
+	}
+	if (b == 4)
+	{
+		SRPPAC = "S11";
+	}
+	if (b == 5)
+	{
+		SRPPAC = "S12";
+	}
+	if (a == 0)
+	{
+		// string input = "/home/sh12s24/art_analysis/user/carlos/macro/Analysis/SRPPAC_param/" + SRPPAC + "_v.txt";
+		string input = "/u/ddas/software/work/artemis-oedo/macro/Analysis/SRPPAC_param/" + SRPPAC + "_v.txt"; // for lxpool artemis installation
+		myfile = fopen(input.c_str(), "r");
+		for (j = 0; j < HEIGHT_V; j++)
+		{
+			for (k = 0; k < WIDTH; k++)
+			{
+				fscanf(myfile, "%lf", &myvariable);
+				if (k == 2 && j == c)
+				{
+					output = myvariable;
+				}
+			}
+		}
+	}
+	if (a == 1)
+	{
+		// string input = "/home/sh12s24/art_analysis/user/carlos/macro/Analysis/SRPPAC_param/" + SRPPAC + "_h.txt";
+		string input = "/u/ddas/software/work/artemis-oedo/macro/Analysis/SRPPAC_param/" + SRPPAC + "_h.txt"; // for lxpool artemis installation
+		myfile = fopen(input.c_str(), "r");
+		for (j = 0; j < HEIGHT_H; j++)
+		{
+			for (k = 0; k < WIDTH; k++)
+			{
+				fscanf(myfile, "%lf", &myvariable);
+				if (k == 2 && j == c)
+				{
+					output = myvariable;
+				}
+			}
+		}
+	}
+	fclose(myfile);
+	return output;
+}
+
+double f_SRPPAC_gain2(int o, int a, int b, int c)
+{
+
+	// cout << "o = " << o << ", a = " << a << ", b = "<< b << ", c = "<< c << endl;
+
+	FILE *myfile;
+	double myvariable;
+	string SRPPAC;
+	double output;
+	int j;
+	int k;
+
+	if (b == 0)
+	{
+		SRPPAC = "FE91";
+	}
+	if (b == 1)
+	{
+		SRPPAC = "FE92";
+	}
+	if (b == 2)
+	{
+		SRPPAC = "FE121";
+	}
+	if (b == 3)
+	{
+		SRPPAC = "FE122";
+	}
+	if (b == 4)
+	{
+		SRPPAC = "S11";
+	}
+	if (b == 5)
+	{
+		SRPPAC = "S12";
+	}
+
+	// cout << SRPPAC << endl;
+	if (o == 1 && a == 15)
+		return 0;
+
+	if (o == 1)
+	{
+		// string input = "/home/sh12s24/art_analysis/user/carlos/macro/Analysis/SRPPAC_param2/" + SRPPAC + "_h_" + Form("%d", a) + ".txt";
+		string input = "/u/ddas/software/work/artemis-oedo/macro/Analysis/SRPPAC_param2/" + SRPPAC + "_h_" + Form("%d", a) + ".txt"; // for lxpool artemis installation
+		myfile = fopen(input.c_str(), "r");
+		for (j = 0; j < HEIGHT_H; j++)
+		{
+			for (k = 0; k < WIDTH; k++)
+			{
+				fscanf(myfile, "%lf", &myvariable);
+				if (k == 2 && j == c)
+				{
+					output = myvariable;
+				}
+			}
+		}
+	}
+
+	if (o == 0)
+	{
+		// string input = "/home/sh12s24/art_analysis/user/carlos/macro/Analysis/SRPPAC_param2/" + SRPPAC + "_v_" + Form("%d", a) + ".txt";
+		string input = "/u/ddas/software/work/artemis-oedo/macro/Analysis/SRPPAC_param2/" + SRPPAC + "_v_" + Form("%d", a) + ".txt"; // for lxpool artemis installation
+		// cout << input << endl;
+		myfile = fopen(input.c_str(), "r");
+		for (j = 0; j < HEIGHT_V; j++)
+		{
+			for (k = 0; k < WIDTH; k++)
+			{
+				fscanf(myfile, "%lf", &myvariable);
+				if (k == 2 && j == c)
+				{
+					output = myvariable;
+				}
+			}
+		}
+	}
+
+	fclose(myfile);
+	return output;
+}
+
+// void f_sort (double array[3][SRPPAC_max_mult][SRPPAC_max_ion])
+void f_sort(double array[3][7][7])
+{
+	// int n = SRPPAC_max_mult; //mult
+	int n = 7;
+	int i, j, k;
+	// for (k = 0; k < SRPPAC_max_ion; k++){
+	for (k = 0; k < 7; k++)
+	{
+		for (i = 0; i < n - 1; i++)
+		{
+			for (j = i + 1; j < n; j++)
+			{
+				if (array[2][j][k] > array[2][i][k])
+				{
+					double temp0 = array[0][i][k];
+					array[0][i][k] = array[0][j][k];
+					array[0][j][k] = temp0;
+					double temp1 = array[1][i][k];
+					array[1][i][k] = array[1][j][k];
+					array[1][j][k] = temp1;
+					double temp2 = array[2][i][k];
+					array[2][i][k] = array[2][j][k];
+					array[2][j][k] = temp2;
+				}
+			}
+		}
+	}
+}
